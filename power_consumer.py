@@ -5,6 +5,7 @@ import sys
 import consumer
 import time
 import traceback
+import signal
 
 class PowerConsumer(consumer.DatabaseConsumer):
     # {{{ handle_packet
@@ -36,6 +37,8 @@ class PowerConsumer(consumer.DatabaseConsumer):
     # }}}
 
 def main():
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    
     pc = None
     
     try:

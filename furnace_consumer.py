@@ -4,7 +4,7 @@
 import sys
 import consumer
 import time
-
+import signal
 import traceback
 
 import re
@@ -115,6 +115,8 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
 
 
 def main():
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    
     fc = None
     
     try:
