@@ -45,22 +45,22 @@ urlopener = urllib2.build_opener(MultipartPostHandler.MultipartPostHandler,
 
 if __name__ == '__main__':
     conn = sqlite3.connect(":memory:", timeout = 30, isolation_level = "EXCLUSIVE")
-
+    
     ## attach databases
     conn.execute("attach database 'sensors.db' as 'primary'")
     print "'primary' attached"
     
     conn.execute("attach database 'upload.db' as 'upload'")
     print "'upload' attached"
-
+    
     ## POWER =================================================================
     last_uploaded_power_rec = int(conn.execute("select value from 'upload'.upload_state where table_name = 'power' and prop_name = 'last_uploaded_timestamp'").fetchone()[0])
-
+    
     proceed_with_upload = True
     
     try:
         print "moving 'power' from 'primary' to 'upload'"
-
+        
         ## insert rows into upload table
         conn.execute(
             """
@@ -70,17 +70,17 @@ if __name__ == '__main__':
             """,
             (last_uploaded_power_rec,)
         )
-
+        
         result = conn.execute("select max(ts_utc) from 'upload'.power").fetchone()[0]
         if result != None:
             last_uploaded_power_rec = int(result)
-
+        
         ## delete rows from primary table
         conn.execute(
             """delete from 'primary'.power where ts_utc < ?""",
             (last_uploaded_power_rec - (15 * 60),) # 15 minutes
         )
-
+        
         ## update metadata table
         conn.execute(
             """
@@ -93,17 +93,17 @@ if __name__ == '__main__':
         )
         
         print "done moving 'power'"
-
+        
         conn.commit()
     except:
         proceed_with_upload = False
         conn.rollback()
         traceback.print_exc()
-
+    
     ## ROOM_TEMP =============================================================
-
+    
     last_uploaded_temp_rec = int(conn.execute("select value from 'upload'.upload_state where table_name = 'room_temp' and prop_name = 'last_uploaded_timestamp'").fetchone()[0])
-
+    
     try:
         print "moving 'room_temp' from 'primary' to 'upload'"
         conn.execute(
@@ -114,13 +114,13 @@ if __name__ == '__main__':
             """,
             (last_uploaded_temp_rec,)
         )
-
+        
         result = conn.execute("select max(ts_utc) from 'upload'.room_temp").fetchone()[0]
         if result != None:
             last_uploaded_temp_rec = int(result)
-
+            
         conn.execute("delete from 'primary'.room_temp")
-
+        
         ## update metadata table
         conn.execute(
             """
@@ -133,16 +133,16 @@ if __name__ == '__main__':
         )
         
         print "done moving 'room_temp'"
-    
+        
         conn.commit()
     except:
         proceed_with_upload = False
         conn.rollback()
         traceback.print_exc()
-
+    
     conn.execute("detach 'primary'")
     print "'primary' detached"
-
+    
     if proceed_with_upload:
         # data to upload
         upload_pkg = {}
@@ -152,26 +152,26 @@ if __name__ == '__main__':
         ## start transaction, dump data to temp file
         try:
             result = conn.execute("select ts_utc, clamp1, clamp2 from 'upload'.power").fetchall()
-
+            
             if result:
                 upload_pkg['power'] = result
                 conn.execute("delete from 'upload'.power")
-    
+            
             result = conn.execute("""
                 select ts_utc, sophies_room, living_room, outside, basement,
                        master, office, master_zone, living_room_zone
                   from 'upload'.room_temp
             """).fetchall()
-
+            
             if result:
                 upload_pkg['room_temp'] = result
                 conn.execute("delete from 'upload'.room_temp")
-
+            
             if upload_pkg:
                 # pickle the dict
                 print "pickling"
                 pickle.dump(upload_pkg, tmpf)
-        
+                
                 # seek to the beginning of the temp file so that it can be read by the
                 # uploader
                 tmpf.seek(0)
@@ -179,15 +179,17 @@ if __name__ == '__main__':
                 ## now, upload the data
                 print "uploading"
                 resp = urlopener.open(upload_url, {'pickle_file': tmpf})
-        
-                print resp.info()
+                
+                if resp.code == 200:
+                    upload_successful = True
+                else:
+                    print "FAILURE: %d -- %s" % (r.code, r.msg)
             else:
                 print "no data to upload"
-                
-            upload_successful = True
+                upload_successful = True
         finally:
             tmpf.close()
-    
+            
             if upload_successful:
                 print "committing transaction"
                 conn.commit()

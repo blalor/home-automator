@@ -14,7 +14,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     
     # {{{ __init__
     def __init__(self, db_name, xbee_address = None):
-        consumer.DatabaseConsumer.__init__(self, db_name, xbee_address = None)
+        consumer.DatabaseConsumer.__init__(self, db_name, xbee_address = xbee_address)
         
         self.buf = ''
         self.found_start = False
@@ -62,7 +62,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                 else:
                     for k in self.sample_record.keys():
                         if self.sample_record[k] == None:
-                            print >>sys.stderr, "missing value for", k, "at", self.sample_record['ts']
+                            print >>sys.stderr, "missing value for", k, "at", now.isoformat()
                             
                     try:
                         self.dbc.execute(

@@ -19,7 +19,7 @@ class PowerConsumer(consumer.DatabaseConsumer):
         if data.startswith('#') and data.endswith('#'):
             
             clamp1, clamp2 = [int(c)/100.0 for c in data[1:-1].split(":")]
-            print clamp1, clamp2
+            # print clamp1, clamp2
             
             try:
                 self.dbc.execute(

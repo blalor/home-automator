@@ -59,13 +59,13 @@ class XBeeReaderThread(threading.Thread):
 class XBeeDispatcher(SocketServer.ThreadingUnixStreamServer):
     daemon_threads = True
     allow_reuse_address = True
-
+    
     def __init__(self, address, serial_device, serial_baud):
         self.serial_device = serial_device
         self.serial_baud = serial_baud
         
         SocketServer.ThreadingUnixStreamServer.__init__(self, address, XBeeRequestHandler)
-
+    
     def server_activate(self):
         self.__shutdown = False
         
@@ -73,34 +73,33 @@ class XBeeDispatcher(SocketServer.ThreadingUnixStreamServer):
         self.__active_clients_lock = threading.RLock()
         
         SocketServer.ThreadingUnixStreamServer.server_activate(self)
-
+        
         ## start XBee communication thread here
         self.xbee_thread = XBeeReaderThread(self.serial_device, self.serial_baud, self)
         self.xbee_thread.start()
-
+    
     def serve_forever(self):
         while not self.__shutdown:
             self.handle_request()
-
     
     def server_close(self):
         self.__shutdown = True
         
         SocketServer.ThreadingUnixStreamServer.server_close(self)
-
+        
         ## close down XBee comm thread
         self.xbee_thread.shutdown()
-
+    
     def add_active_client(self, client):
         with self.__active_clients_lock:
             if client not in self.__active_clients:
                 self.__active_clients.append(client)
-
+    
     def remove_active_client(self, client):
         with self.__active_clients_lock:
             if client in self.__active_clients:
                 self.__active_clients.remove(client)
-
+    
     def dispatch_packet(self, packet):
         found_clients = False
         
@@ -108,11 +107,11 @@ class XBeeDispatcher(SocketServer.ThreadingUnixStreamServer):
             for client in self.__active_clients:
                 found_clients = True
                 client.enqueue_packet(packet)
-
-
+        
+        
         if not found_clients:
             print >>sys.stderr, "no active clients"
-
+    
 
 
 class XBeeRequestHandler(SocketServer.BaseRequestHandler):
@@ -127,15 +126,14 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
         
         ## add ourselves to the server's list of active clients
         self.server.add_active_client(self)
-
+        
         ## think this might only work with TCP sockets
         self.request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     
-        
     def handle(self):
         ## we *must* ensure that finish() gets called, which only happens when
         ## handle() returns successfully.
-
+        
         ## at this time, I'm only sending data *to* the clients
         self.request.shutdown(socket.SHUT_RD)
         
@@ -146,7 +144,7 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
                 try:
                     # pull a packet from the queue, with a blocking timeout
                     packet = self.packet_queue.get(True, 1)
-
+                    
                     length = len(packet)
                     
                     self.request.send(struct.pack('BH', xbee.xbee.START_IOPACKET, length))
@@ -158,13 +156,12 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
                     traceback.print_exc()
                     
                     connection_alive = False
-
-
+                    
+                    
         except:
             print >>sys.stderr, "exception handling request"
             traceback.print_exc()
         
-    
     
     def finish(self):
         ## don't do anything too fancy in here; since we're using daemon
@@ -172,9 +169,10 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
         
         ## remove ourselves from the server's list of active clients
         self.server.remove_active_client(self)
-
+        
         ## close the socket
         self.request.close()
+    
 
 
 def main():
