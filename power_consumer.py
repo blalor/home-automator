@@ -22,7 +22,7 @@ class PowerConsumer(consumer.DatabaseConsumer):
             
             try:
                 self.dbc.execute(
-                    "insert into power (timestamp, clamp1, clamp2) values (?, ?, ?)",
+                    "insert into power (ts_utc, clamp1, clamp2) values (?, ?, ?)",
                     (
                         time.mktime(now.timetuple()),
                         clamp1,

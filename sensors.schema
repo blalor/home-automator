@@ -1,0 +1,2 @@
+CREATE TABLE power (ts_utc integer primary key asc, clamp1 real, clamp2 real);
+CREATE TABLE room_temp (ts_utc integer primary key asc, sophies_room real, living_room real, outside real, basement real, master real, office real, master_zone integer, living_room_zone integer);

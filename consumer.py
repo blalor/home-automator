@@ -87,8 +87,8 @@ class DatabaseConsumer(BaseConsumer):
         import sqlite3
         
         self.dbc = sqlite3.connect(db_name,
-                                     isolation_level = None,
-                                     timeout = 5)
+                                   isolation_level = None,
+                                   timeout = 5)
         
         BaseConsumer.__init__(self, xbee_address)
     # }}}

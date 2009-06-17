@@ -35,7 +35,7 @@ import MultipartPostHandler
 import cPickle as pickle
 import tempfile
 
-upload_url = "http://localhost/~blalor/graphing/protected/upload.py/upload"
+upload_url = "http://example.com/upload_data"
 
 auth_handler = urllib2.HTTPDigestAuthHandler()
 auth_handler.add_password("<basic http auth realm>", upload_url, "<userid>", "<password>")
@@ -66,18 +66,18 @@ if __name__ == '__main__':
             """
             insert into 'upload'.power
                 select * from 'primary'.power
-                 where 'primary'.power.timestamp > ?
+                 where 'primary'.power.ts_utc > ?
             """,
             (last_uploaded_power_rec,)
         )
 
-        result = conn.execute("select max(timestamp) from 'upload'.power").fetchone()[0]
+        result = conn.execute("select max(ts_utc) from 'upload'.power").fetchone()[0]
         if result != None:
             last_uploaded_power_rec = int(result)
 
         ## delete rows from primary table
         conn.execute(
-            """delete from 'primary'.power where timestamp < ?""",
+            """delete from 'primary'.power where ts_utc < ?""",
             (last_uploaded_power_rec - (15 * 60),) # 15 minutes
         )
 
@@ -110,12 +110,12 @@ if __name__ == '__main__':
             """
             insert into 'upload'.room_temp
                 select * from 'primary'.room_temp
-                 where 'primary'.room_temp.timestamp > ?
+                 where 'primary'.room_temp.ts_utc > ?
             """,
             (last_uploaded_temp_rec,)
         )
 
-        result = conn.execute("select max(timestamp) from 'upload'.room_temp").fetchone()[0]
+        result = conn.execute("select max(ts_utc) from 'upload'.room_temp").fetchone()[0]
         if result != None:
             last_uploaded_temp_rec = int(result)
 
@@ -151,14 +151,14 @@ if __name__ == '__main__':
         
         ## start transaction, dump data to temp file
         try:
-            result = conn.execute("select timestamp, clamp1, clamp2 from 'upload'.power").fetchall()
+            result = conn.execute("select ts_utc, clamp1, clamp2 from 'upload'.power").fetchall()
 
             if result:
                 upload_pkg['power'] = result
                 conn.execute("delete from 'upload'.power")
     
             result = conn.execute("""
-                select timestamp, sophies_room, living_room, outside, basement,
+                select ts_utc, sophies_room, living_room, outside, basement,
                        master, office, master_zone, living_room_zone
                   from 'upload'.room_temp
             """).fetchall()

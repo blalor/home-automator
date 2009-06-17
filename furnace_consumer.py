@@ -68,7 +68,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                         self.dbc.execute(
                             """
                             insert into room_temp (
-                                timestamp, sophies_room, living_room, outside,
+                                ts_utc, sophies_room, living_room, outside,
                                 basement, master, office,
                                 master_zone, living_room_zone
                             ) values (
