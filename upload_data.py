@@ -25,8 +25,9 @@
 ## should get uploaded.  This'll make it possible to keep some data in the
 ## power table for real-time monitoring.
 
+import os
 import sqlite3
-import traceback
+import logging
 
 # http://www.hackorama.com/python/upload.shtml
 import urllib2
@@ -44,34 +45,42 @@ urlopener = urllib2.build_opener(MultipartPostHandler.MultipartPostHandler,
                                  auth_handler)
 
 if __name__ == '__main__':
-    conn = sqlite3.connect(":memory:", timeout = 30, isolation_level = "EXCLUSIVE")
+    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    
+    logging.basicConfig(level=logging.DEBUG,
+                        format='%(asctime)s %(levelname)s %(name)s -- %(message)s',
+                        filename='uploader.log',
+                        filemode='a')
+    
+    log = logging.getLogger("uploader")
+    
+    log.info("starting up in %s" % (os.getcwd(),))
+    
+    conn = sqlite3.connect("upload.db", timeout = 30, isolation_level = "EXCLUSIVE")
     
     ## attach databases
     conn.execute("attach database 'sensors.db' as 'primary'")
-    print "'primary' attached"
-    
-    conn.execute("attach database 'upload.db' as 'upload'")
-    print "'upload' attached"
+    log.debug("'primary' attached")
     
     ## POWER =================================================================
-    last_uploaded_power_rec = int(conn.execute("select value from 'upload'.upload_state where table_name = 'power' and prop_name = 'last_uploaded_timestamp'").fetchone()[0])
+    last_uploaded_power_rec = int(conn.execute("select value from 'main'.upload_state where table_name = 'power' and prop_name = 'last_uploaded_timestamp'").fetchone()[0])
     
     proceed_with_upload = True
     
     try:
-        print "moving 'power' from 'primary' to 'upload'"
+        log.debug("moving 'power' from 'primary' to 'main'")
         
-        ## insert rows into upload table
+        ## insert rows into upload db
         conn.execute(
             """
-            insert into 'upload'.power
+            insert into 'main'.power
                 select * from 'primary'.power
                  where 'primary'.power.ts_utc > ?
             """,
             (last_uploaded_power_rec,)
         )
         
-        result = conn.execute("select max(ts_utc) from 'upload'.power").fetchone()[0]
+        result = conn.execute("select max(ts_utc) from 'main'.power").fetchone()[0]
         if result != None:
             last_uploaded_power_rec = int(result)
         
@@ -84,7 +93,7 @@ if __name__ == '__main__':
         ## update metadata table
         conn.execute(
             """
-            update 'upload'.upload_state
+            update 'main'.upload_state
                set value = ?
              where table_name = 'power'
                and prop_name = 'last_uploaded_timestamp'
@@ -92,30 +101,31 @@ if __name__ == '__main__':
             (last_uploaded_power_rec,)
         )
         
-        print "done moving 'power'"
+        log.debug("done moving 'power'")
         
         conn.commit()
     except:
         proceed_with_upload = False
+
+        log.critical("unable to migrate power data to upload.db", exc_info = True)
         conn.rollback()
-        traceback.print_exc()
     
     ## ROOM_TEMP =============================================================
     
-    last_uploaded_temp_rec = int(conn.execute("select value from 'upload'.upload_state where table_name = 'room_temp' and prop_name = 'last_uploaded_timestamp'").fetchone()[0])
+    last_uploaded_temp_rec = int(conn.execute("select value from 'main'.upload_state where table_name = 'room_temp' and prop_name = 'last_uploaded_timestamp'").fetchone()[0])
     
     try:
-        print "moving 'room_temp' from 'primary' to 'upload'"
+        log.debug("moving 'room_temp' from 'primary' to 'main'")
         conn.execute(
             """
-            insert into 'upload'.room_temp
+            insert into 'main'.room_temp
                 select * from 'primary'.room_temp
                  where 'primary'.room_temp.ts_utc > ?
             """,
             (last_uploaded_temp_rec,)
         )
         
-        result = conn.execute("select max(ts_utc) from 'upload'.room_temp").fetchone()[0]
+        result = conn.execute("select max(ts_utc) from 'main'.room_temp").fetchone()[0]
         if result != None:
             last_uploaded_temp_rec = int(result)
             
@@ -124,7 +134,7 @@ if __name__ == '__main__':
         ## update metadata table
         conn.execute(
             """
-            update 'upload'.upload_state
+            update 'main'.upload_state
                set value = ?
              where table_name = 'room_temp'
                and prop_name = 'last_uploaded_timestamp'
@@ -132,16 +142,16 @@ if __name__ == '__main__':
             (last_uploaded_temp_rec,)
         )
         
-        print "done moving 'room_temp'"
+        log.debug("done moving 'room_temp'")
         
         conn.commit()
     except:
         proceed_with_upload = False
+        log.critical("unable to migrate room_temp data to upload.db", exc_info = True)
         conn.rollback()
-        traceback.print_exc()
     
     conn.execute("detach 'primary'")
-    print "'primary' detached"
+    log.debug("'primary' detached")
     
     if proceed_with_upload:
         # data to upload
@@ -151,25 +161,25 @@ if __name__ == '__main__':
         
         ## start transaction, dump data to temp file
         try:
-            result = conn.execute("select ts_utc, clamp1, clamp2 from 'upload'.power").fetchall()
+            result = conn.execute("select ts_utc, clamp1, clamp2 from 'main'.power").fetchall()
             
             if result:
                 upload_pkg['power'] = result
-                conn.execute("delete from 'upload'.power")
+                conn.execute("delete from 'main'.power")
             
             result = conn.execute("""
                 select ts_utc, sophies_room, living_room, outside, basement,
                        master, office, master_zone, living_room_zone
-                  from 'upload'.room_temp
+                  from 'main'.room_temp
             """).fetchall()
             
             if result:
                 upload_pkg['room_temp'] = result
-                conn.execute("delete from 'upload'.room_temp")
+                conn.execute("delete from 'main'.room_temp")
             
             if upload_pkg:
                 # pickle the dict
-                print "pickling"
+                log.debug("pickling")
                 pickle.dump(upload_pkg, tmpf)
                 
                 # seek to the beginning of the temp file so that it can be read by the
@@ -177,22 +187,22 @@ if __name__ == '__main__':
                 tmpf.seek(0)
                 
                 ## now, upload the data
-                print "uploading"
+                log.debug("uploading")
                 resp = urlopener.open(upload_url, {'pickle_file': tmpf})
                 
                 if resp.code == 200:
                     upload_successful = True
                 else:
-                    print "FAILURE: %d -- %s" % (r.code, r.msg)
+                    log.critical("FAILURE: %d -- %s" % (r.code, r.msg))
             else:
-                print "no data to upload"
+                log.info("no data to upload")
                 upload_successful = True
         finally:
             tmpf.close()
             
             if upload_successful:
-                print "committing transaction"
+                log.debug("committing transaction")
                 conn.commit()
             else:
-                print "rolling back transaction"
+                log.debug("rolling back transaction")
                 conn.rollback()
