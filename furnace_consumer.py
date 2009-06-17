@@ -13,8 +13,8 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     data_re = re.compile(r'''^([A-Z][A-Za-z]*)\[(\w+)\]=(-?\d+)$''')
     
     # {{{ __init__
-    def __init__(self, address = None):
-        consumer.BaseConsumer.__init__(self, address)
+    def __init__(self, db_name, xbee_address = None):
+        consumer.DatabaseConsumer.__init__(self, db_name, xbee_address = None)
         
         self.buf = ''
         self.found_start = False

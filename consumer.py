@@ -9,7 +9,9 @@ import xbee
 
 import datetime
 
-class Disconnected(Exception): pass
+class Disconnected(Exception):
+    pass
+
 
 class BaseConsumer(object):
     __default_socket_path = "socket"
@@ -28,7 +30,8 @@ class BaseConsumer(object):
         
         self.__socket.connect(self.__default_socket_path)
     # }}}
-
+    
+    
     # {{{ __find_packet
     def __find_packet(self):
         packet = None
@@ -51,7 +54,7 @@ class BaseConsumer(object):
     def shutdown(self):
         self.__shutdown = True
     # }}}
-
+    
     # {{{ process_packet
     def process_packet(self):
         packet = self.__find_packet()
@@ -59,14 +62,14 @@ class BaseConsumer(object):
         if packet:
             if (packet.address_64 == self.xbee_address) or (self.xbee_address == None):
                 self.handle_packet(packet)
-
+    
     # }}}
-
+    
     # {{{ process_forever
     def process_forever(self):
         while not self.__shutdown:
             self.process_packet()
-
+        
         self.__socket.close()
     # }}}
     
@@ -75,11 +78,13 @@ class BaseConsumer(object):
         ## for testing only; subclasses should override
         print packet
     # }}}
-
+    
     # {{{ utcnow
     def utcnow(self):
         return datetime.datetime.utcnow()
     # }}}
+    
+
 
 class DatabaseConsumer(BaseConsumer):
     # {{{ __init__
