@@ -4,7 +4,6 @@
 ## my elegant, robust, modular design is too much for the limited memory on
 ## the WL520gu :-(
 
-import os
 import signal
 import logging
 import xbee, serial
@@ -206,19 +205,32 @@ class MDispatcher(object):
         self.log.info("we've been shut down!")
     # }}}
 
-def main():
-    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+
+if __name__ == '__main__':
+    import daemonizer, os, sys
+
+    working_dir = os.path.abspath(os.path.dirname(sys.argv[0]))
+    
+    daemonizer.createDaemon()
+    
+    os.chdir(working_dir)
     
     logging.basicConfig(level=logging.DEBUG,
                         format='%(asctime)s %(levelname)s %(name)s -- %(message)s',
                         filename='dispatcher.log',
                         filemode='a')
 
-    logging.info("starting up in %s" % (os.getcwd(),))
-
+    logging.info("starting up in %s; pid %d" % (os.getcwd(), os.getpid()))
+    
     md = None
     
     try:
+        ofp = open("pidfile", "w")
+        ofp.write("%d" % (os.getpid(),))
+        ofp.flush()
+        ofp.close()
+        del ofp
+        
         md = MDispatcher("/dev/tts/0", 115200)
         md.dispatch()
     except:
@@ -229,7 +241,4 @@ def main():
 
         logging.info("exiting")
         logging.shutdown()
-    
-
-if __name__ == '__main__':
-    main()
+        os.unlink("pidfile")
