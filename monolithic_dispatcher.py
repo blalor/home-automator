@@ -14,12 +14,13 @@ import re
 class SignalRaised(Exception):
     pass
 
+
 class MDispatcher(object):
     POWER_ADDR = '0013A2004053A365'
     
     FURNACE_ADDR = '0013A2004053A44D'
     FURNACE_RE = re.compile(r'''^([A-Z][A-Za-z]*)\[(\w+)\]=(-?\d+)$''')
-
+    
     # {{{ __init__
     def __init__(self, port, baud):
         self.log = logging.getLogger(self.__class__.__name__)
@@ -27,16 +28,17 @@ class MDispatcher(object):
         self.__setup_signals()
         
         self.serial = serial.Serial(port = port, baudrate = baud)
-
+        
         self.dbc = sqlite3.connect('sensors.db',
                                    isolation_level = None,
                                    timeout = 5)
-
+        
         self.furnace_buf = ''
         self.furnace_found_start = False
         self.furnace_sample_record = {}
     # }}}
-
+    
+    
     # {{{ __setup_signals
     def __setup_signals(self):
         def sig_hndlr(signum, frame):
@@ -54,11 +56,13 @@ class MDispatcher(object):
         signal.signal(signal.SIGHUP, signal.SIG_IGN)
     # }}}
     
+    
     # {{{ utcnow
     def utcnow(self):
         return datetime.datetime.utcnow()
     # }}}
-
+    
+    
     # {{{ shutdown
     def shutdown(self):
         if not self.__shutdown:
@@ -67,6 +71,7 @@ class MDispatcher(object):
             self.serial.close()
             self.dbc.close()
     # }}}
+    
     
     # {{{ handle_furnace
     def handle_furnace(self, xb):
@@ -106,7 +111,7 @@ class MDispatcher(object):
                     
                 else:
                     now = self.utcnow()
-        
+                    
                     for k in self.furnace_sample_record.keys():
                         if self.furnace_sample_record[k] == None:
                             self.log.error("missing value for %s" % (k,))
@@ -158,7 +163,8 @@ class MDispatcher(object):
                     
                 self.furnace_sample_record[sample_type + ':' + sample_label] = sample_value
     # }}}
-
+    
+    
     # {{{ handle_power
     def handle_power(self, xb):
         # #853:0#
@@ -184,7 +190,7 @@ class MDispatcher(object):
         else:
             self.log.warn("bad data: " + data)
     # }}}
-
+    
     # {{{ dispatch
     def dispatch(self):
         while not self.__shutdown:
@@ -192,23 +198,26 @@ class MDispatcher(object):
                 packet = xbee.xbee.find_packet(self.serial)
                 
                 if packet:
-                    if packet.address_64 == self.FURNACE_ADDR:
-                        self.handle_furnace(packet)
-                    elif packet.address_64 == self.POWER_ADDR:
-                        self.handle_power(packet)
+                    xb = xbee.xbee(packet)
+                    
+                    if xb.address_64 == self.FURNACE_ADDR:
+                        self.handle_furnace(xb)
+                    elif xb.address_64 == self.POWER_ADDR:
+                        self.handle_power(xb)
                     else:
-                        self.log.warn("Unhandled packet: %s" % (str(packet),))
+                        self.log.warn("Unhandled packet: %s" % (str(xb),))
             except SignalRaised, e:
                 # just break out of processing
                 self.log.info("interrupted by signal %d" % (e.args[0],))
-
+        
         self.log.info("we've been shut down!")
     # }}}
+    
 
 
 if __name__ == '__main__':
     import daemonizer, os, sys
-
+    
     working_dir = os.path.abspath(os.path.dirname(sys.argv[0]))
     
     daemonizer.createDaemon()
@@ -219,7 +228,7 @@ if __name__ == '__main__':
                         format='%(asctime)s %(levelname)s %(name)s -- %(message)s',
                         filename='dispatcher.log',
                         filemode='a')
-
+    
     logging.info("starting up in %s; pid %d" % (os.getcwd(), os.getpid()))
     
     md = None
@@ -238,7 +247,7 @@ if __name__ == '__main__':
     finally:
         if md != None:
             md.shutdown()
-
+        
         logging.info("exiting")
         logging.shutdown()
         os.unlink("pidfile")

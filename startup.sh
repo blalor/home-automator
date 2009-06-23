@@ -1,7 +1,6 @@
-#!/bin/sh -e
+#!/bin/sh -ex
 
 cd $(dirname $0)
-./dispatcher.py /dev/tts/0 115200 &
+(while :; do ./dispatcher.py /dev/tty.usbserial-FTE4Y0J6 115200; done) &
 sleep 1
-./power_consumer.py &
-./furnace_consumer.py &
+(while :; do ./combined_consumer.py; done) &

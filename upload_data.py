@@ -35,6 +35,7 @@ import MultipartPostHandler
 
 import cPickle as pickle
 import tempfile
+from datetime import datetime
 
 upload_url = "http://example.com/upload_data"
 
@@ -161,17 +162,21 @@ if __name__ == '__main__':
         
         ## start transaction, dump data to temp file
         try:
-            result = conn.execute("select ts_utc, clamp1, clamp2 from 'main'.power").fetchall()
+            result = []
+            for row in conn.execute("select ts_utc, clamp1, clamp2 from 'main'.power").fetchall():
+                result.append((datetime.fromtimestamp(row[0]), row[1], row[2]))
             
             if result:
                 upload_pkg['power'] = result
                 conn.execute("delete from 'main'.power")
             
-            result = conn.execute("""
+            result = []
+            for row in conn.execute("""
                 select ts_utc, sophies_room, living_room, outside, basement,
                        master, office, master_zone, living_room_zone
                   from 'main'.room_temp
-            """).fetchall()
+            """).fetchall():
+                result.append((datetime.fromtimestamp(row[0]), row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]))
             
             if result:
                 upload_pkg['room_temp'] = result
