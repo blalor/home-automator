@@ -1,2 +1,4 @@
 CREATE TABLE power (ts_utc integer primary key asc, clamp1 real, clamp2 real);
-CREATE TABLE room_temp (ts_utc integer primary key asc, sophies_room real, living_room real, outside real, basement real, master real, office real, master_zone integer, living_room_zone integer);
+CREATE TABLE temperature (ts_utc integer,  node_id text, temp_C real, primary key(ts_utc,node_id));
+CREATE TABLE humidity (ts_utc integer,  node_id text, rel_humid real, primary key(ts_utc,node_id));
+

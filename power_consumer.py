@@ -52,7 +52,7 @@ def main():
     pc = None
     
     try:
-        pc = PowerConsumer('sensors.db', xbee_address = '00:11:22:33:44:55:66:0a')
+        pc = PowerConsumer('sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:0a'])
         pc.process_forever()
     finally:
         if pc != None:

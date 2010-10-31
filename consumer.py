@@ -18,9 +18,9 @@ class BaseConsumer(object):
     __frame_id = '\x01'
     
     # {{{ __init__
-    def __init__(self, xbee_address = None):
-        self.xbee_address = self._parse_addr(xbee_address)
-        # print 'addresses:', (xbee_address, self.xbee_address)
+    def __init__(self, xbee_addresses = []):
+        self.xbee_addresses = [self._parse_addr(xba) for xba in xbee_addresses]
+        
         self.__shutdown = False
         
         # self.__socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -87,11 +87,10 @@ class BaseConsumer(object):
                 src_addr = frame['source_addr_long']
             
             _do_process = True
-            if self.xbee_address != None:
-                if ('source_addr_long' in frame) and (self.xbee_address != frame['source_addr_long']):
+            if self.xbee_addresses:
+                if (src_addr != None) and (src_addr not in self.xbee_addresses):
                     _do_process = False
                 
-            
             if _do_process:
                 self.handle_packet(frame)
             else:
@@ -115,14 +114,14 @@ class BaseConsumer(object):
 
 class DatabaseConsumer(BaseConsumer):
     # {{{ __init__
-    def __init__(self, db_name, xbee_address = None):
+    def __init__(self, db_name, xbee_addresses = []):
         import sqlite3
         
         self.dbc = sqlite3.connect(db_name,
                                    isolation_level = None,
                                    timeout = 5)
         
-        BaseConsumer.__init__(self, xbee_address)
+        BaseConsumer.__init__(self, xbee_addresses)
     # }}}
     
     # {{{ process_forever

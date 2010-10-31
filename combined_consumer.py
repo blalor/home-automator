@@ -19,7 +19,7 @@ class CombinedConsumer(consumer.DatabaseConsumer):
     
     # {{{ __init__
     def __init__(self, db_name):
-        consumer.DatabaseConsumer.__init__(self, db_name, xbee_address = None)
+        consumer.DatabaseConsumer.__init__(self, db_name, xbee_addresses = None)
         
         self.buf = ''
         self.found_start = False

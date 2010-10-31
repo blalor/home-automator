@@ -13,8 +13,8 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     data_re = re.compile(r'''^([A-Z][A-Za-z]*)\[(\w+)\]=(-?\d+)$''')
     
     # {{{ __init__
-    def __init__(self, db_name, xbee_address = None):
-        consumer.DatabaseConsumer.__init__(self, db_name, xbee_address = xbee_address)
+    def __init__(self, db_name, xbee_addresses = []):
+        consumer.DatabaseConsumer.__init__(self, db_name, xbee_addresses = xbee_addresses)
         
         self.buf = ''
         self.found_start = False
@@ -121,7 +121,7 @@ def main():
     fc = None
     
     try:
-        fc = FurnaceConsumer('sensors.db', xbee_address = '00:11:22:33:44:55:66:4D')
+        fc = FurnaceConsumer('sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:4D'])
         fc.process_forever()
     finally:
         if fc != None:
