@@ -22,7 +22,8 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     # }}}
     
     # {{{ handle_packet
-    def handle_packet(self, xb):
+    def handle_packet(self, frame):
+        print frame
         now = self.utcnow()
         
         ## convert the data to chars and append to buffer
@@ -120,7 +121,7 @@ def main():
     fc = None
     
     try:
-        fc = FurnaceConsumer('sensors.db', xbee_address = '0013A2004053A44D')
+        fc = FurnaceConsumer('sensors.db', xbee_address = '00:11:22:33:44:55:66:4D')
         fc.process_forever()
     finally:
         if fc != None:
