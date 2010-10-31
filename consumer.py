@@ -5,7 +5,7 @@ import sys
 import socket
 
 import struct
-import xbee
+import XBeeProxy
 
 import datetime
 
@@ -14,63 +14,90 @@ class Disconnected(Exception):
 
 
 class BaseConsumer(object):
-    __default_socket_path = "socket"
-    __header_pack_fmt = "BH"
+    __default_socket_path = ('tonidoplug', 9999)
+    __frame_id = '\x01'
     
     # {{{ __init__
     def __init__(self, xbee_address = None):
-        self.xbee_address = xbee_address
+        self.xbee_address = self._parse_addr(xbee_address)
+        # print 'addresses:', (xbee_address, self.xbee_address)
         self.__shutdown = False
-        self.__header_len = struct.calcsize(self.__header_pack_fmt)
         
-        self.__socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        # self.__socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         
         ## this may only apply to TCP sockets...
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         
         self.__socket.connect(self.__default_socket_path)
+        
+        self.xbee = XBeeProxy.XBeeProxy(self.__socket)
     # }}}
     
+    # {{{ _parse_addr
+    def _parse_addr(self, addr):
+        paddr = None
+        if addr != None:
+            paddr = "".join(chr(int(x, 16)) for x in addr.split(":"))
+        
+        return paddr
     
-    # {{{ __find_packet
-    def __find_packet(self):
-        packet = None
+    # }}}
+    
+    # {{{ _format_addr
+    def _format_addr(self, addr):
+        return ":".join(['%02x' % ord(x) for x in addr])
+    
+    # }}}
+    
+    # {{{ _sample_to_mv
+    def _sample_to_mv(self, sample):
+        """Converts a raw A/D sample to mV (uncalibrated)."""
+        return sample * 1200.0 / 1023
+    # }}}
+    
+    # {{{ get_frame_id
+    def get_frame_id(self):
+        return self.__frame_id
+    
+    # }}}
+    
+    # {{{ next_frame_id
+    def next_frame_id(self):
+        self.__frame_id = chr(ord(self.__frame_id) + 1)
         
-        header = self.__socket.recv(self.__header_len)
-        
-        if len(header) != self.__header_len:
-            raise Disconnected("expected %d bytes, got %d" % (self.__header_len, len(header)))
-            
-        else:
-            packet_id, length = struct.unpack(self.__header_pack_fmt, header)
-            
-            if packet_id == xbee.xbee.START_IOPACKET:
-                packet = xbee.xbee(self.__socket.recv(length))
-        
-        return packet
+        return self.get_frame_id()
+    
     # }}}
     
     # {{{ shutdown
     def shutdown(self):
         self.__shutdown = True
-    # }}}
-    
-    # {{{ process_packet
-    def process_packet(self):
-        packet = self.__find_packet()
-        
-        if packet:
-            if (packet.address_64 == self.xbee_address) or (self.xbee_address == None):
-                self.handle_packet(packet)
-    
+        self.__socket.shutdown(socket.SHUT_RDWR)
+        self.__socket.close()
     # }}}
     
     # {{{ process_forever
     def process_forever(self):
         while not self.__shutdown:
-            self.process_packet()
+            frame = self.xbee.wait_read_frame()
+            
+            src_addr = None
+            if 'source_addr_long' in frame:
+                src_addr = frame['source_addr_long']
+            
+            _do_process = True
+            if self.xbee_address != None:
+                if ('source_addr_long' in frame) and (self.xbee_address != frame['source_addr_long']):
+                    _do_process = False
+                
+            
+            if _do_process:
+                self.handle_packet(frame)
+            else:
+                # no match on address; filtered.
+                pass
         
-        self.__socket.close()
     # }}}
     
     # {{{ handle_packet
@@ -107,5 +134,8 @@ class DatabaseConsumer(BaseConsumer):
 
 
 if __name__ == '__main__':
-    BaseConsumer().process_forever()
+    try:
+        BaseConsumer().process_forever()
+    finally:
+        BaseConsumer().shutdown()
 
