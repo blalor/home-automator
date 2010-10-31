@@ -9,13 +9,23 @@ import signal
 
 class PowerConsumer(consumer.DatabaseConsumer):
     # {{{ handle_packet
-    def handle_packet(self, xb):
+    def handle_packet(self, frame):
+        # {'id': 'zb_rx',
+        #  'options': '\x01',
+        #  'rf_data': '#23:71#\r\n',
+        #  'src_addr': '\x18:',
+        #  'src_addr_long': '\x00\x13\xa2\x00@:[\n'}
+        
         now = self.utcnow()
+        
+        if frame['id'] != 'zb_rx':
+            print >>sys.stderr, "unhandled frame id", frame['id']
+            return
         
         # #853:0#
         # readings given in amps * 100
         
-        data = ''.join([chr(c) for c in xb.data]).strip()
+        data = frame['rf_data'].strip()
         if data.startswith('#') and data.endswith('#'):
             
             clamp1, clamp2 = [int(c)/100.0 for c in data[1:-1].split(":")]
@@ -42,7 +52,7 @@ def main():
     pc = None
     
     try:
-        pc = PowerConsumer('sensors.db', xbee_address = '0013A2004053A365')
+        pc = PowerConsumer('sensors.db', xbee_address = '00:11:22:33:44:55:66:0a')
         pc.process_forever()
     finally:
         if pc != None:
