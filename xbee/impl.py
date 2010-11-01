@@ -146,7 +146,8 @@ class XBee(XBeeBase):
                      "\x8B":
                         {'name': 'zb_tx_status',
                          'structure':
-                            [{'name':'dest_addr',        'len':2},
+                            [{'name':'frame_id',         'len':1},
+                             {'name':'dest_addr',        'len':2},
                              {'name':'retries',          'len':1},
                              {'name':'delivery_status',  'len':1},
                              {'name':'discovery_status', 'len':1}]},
