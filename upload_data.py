@@ -45,6 +45,15 @@ auth_handler.add_password("<basic http auth realm>", upload_url, "<userid>", "<p
 urlopener = urllib2.build_opener(MultipartPostHandler.MultipartPostHandler,
                                  auth_handler)
 
+TABLE_TO_PICKLE_MAP = {
+    'power' : ('power', ('ts_utc', 'clamp1', 'clamp2')),
+    'temperature' : ('temperature', ('ts_utc', 'node_id', 'temp_C')),
+    'humidity' : ('humidity', ('ts_utc', 'node_id', 'rel_humid')),
+    # 'light' : '',
+    # 'furnace' : '',
+    'oil_tank' : ('oil_tank', ('ts_utc', 'height')),
+}
+
 if __name__ == '__main__':
     os.chdir(os.path.abspath(os.path.dirname(__file__)))
     
@@ -63,93 +72,68 @@ if __name__ == '__main__':
     conn.execute("attach database 'sensors.db' as 'primary'")
     log.debug("'primary' attached")
     
-    ## POWER =================================================================
-    last_uploaded_power_rec = int(conn.execute("select value from 'main'.upload_state where table_name = 'power' and prop_name = 'last_uploaded_timestamp'").fetchone()[0])
-    
     proceed_with_upload = True
     
-    try:
-        log.debug("moving 'power' from 'primary' to 'main'")
-        
-        ## insert rows into upload db
-        conn.execute(
-            """
-            insert into 'main'.power
-                select * from 'primary'.power
-                 where 'primary'.power.ts_utc > ?
-            """,
-            (last_uploaded_power_rec,)
+    ## walk through each table in the map
+    for table_name in TABLE_TO_PICKLE_MAP:
+        last_uploaded_rec = int(
+            conn.execute(
+                """
+                select value
+                  from 'main'.upload_state
+                 where table_name = ?
+                   and prop_name = 'last_uploaded_timestamp'
+                """,
+                (table_name,)
+            ).fetchone()[0]
         )
         
-        result = conn.execute("select max(ts_utc) from 'main'.power").fetchone()[0]
-        if result != None:
-            last_uploaded_power_rec = int(result)
-        
-        ## delete rows from primary table
-        conn.execute(
-            """delete from 'primary'.power where ts_utc < ?""",
-            (last_uploaded_power_rec - (15 * 60),) # 15 minutes
-        )
-        
-        ## update metadata table
-        conn.execute(
-            """
-            update 'main'.upload_state
-               set value = ?
-             where table_name = 'power'
-               and prop_name = 'last_uploaded_timestamp'
-            """,
-            (last_uploaded_power_rec,)
-        )
-        
-        log.debug("done moving 'power'")
-        
-        conn.commit()
-    except:
-        proceed_with_upload = False
-
-        log.critical("unable to migrate power data to upload.db", exc_info = True)
-        conn.rollback()
-    
-    ## ROOM_TEMP =============================================================
-    
-    last_uploaded_temp_rec = int(conn.execute("select value from 'main'.upload_state where table_name = 'room_temp' and prop_name = 'last_uploaded_timestamp'").fetchone()[0])
-    
-    try:
-        log.debug("moving 'room_temp' from 'primary' to 'main'")
-        conn.execute(
-            """
-            insert into 'main'.room_temp
-                select * from 'primary'.room_temp
-                 where 'primary'.room_temp.ts_utc > ?
-            """,
-            (last_uploaded_temp_rec,)
-        )
-        
-        result = conn.execute("select max(ts_utc) from 'main'.room_temp").fetchone()[0]
-        if result != None:
-            last_uploaded_temp_rec = int(result)
+        try:
+            log.debug("moving '%s' from 'primary' to 'main'" % (table_name,))
             
-        conn.execute("delete from 'primary'.room_temp")
-        
-        ## update metadata table
-        conn.execute(
-            """
-            update 'main'.upload_state
-               set value = ?
-             where table_name = 'room_temp'
-               and prop_name = 'last_uploaded_timestamp'
-            """,
-            (last_uploaded_temp_rec,)
-        )
-        
-        log.debug("done moving 'room_temp'")
-        
-        conn.commit()
-    except:
-        proceed_with_upload = False
-        log.critical("unable to migrate room_temp data to upload.db", exc_info = True)
-        conn.rollback()
+            ## insert rows into upload db
+            conn.execute(
+                """
+                insert into 'main'.%(table_name)s
+                    select * from 'primary'.%(table_name)s
+                     where 'primary'.%(table_name)s.ts_utc > ?
+                """ % {'table_name':table_name},
+                (last_uploaded_rec,)
+            )
+            
+            result = conn.execute(
+                "select max(ts_utc) from 'main'.%s" % (table_name,)
+            ).fetchone()[0]
+            
+            if result != None:
+                last_uploaded_rec = int(result)
+            
+            ## delete rows from primary table
+            conn.execute(
+                """delete from 'primary'.%s where ts_utc < ?""" % (table_name,),
+                (last_uploaded_rec - (15 * 60),) # 15 minutes
+            )
+            
+            ## update metadata table
+            conn.execute(
+                """
+                update 'main'.upload_state
+                   set value = ?
+                 where table_name = ?
+                   and prop_name = 'last_uploaded_timestamp'
+                """,
+                (table_name, last_uploaded_rec)
+            )
+            
+            log.debug("done moving '%s'" % (table_name,))
+            
+            conn.commit()
+        except:
+            proceed_with_upload = False
+            
+            log.critical("unable to migrate data to upload.db for table %s" % (table_name,), exc_info = True)
+            conn.rollback()
+    
     
     conn.execute("detach 'primary'")
     log.debug("'primary' detached")
@@ -157,32 +141,28 @@ if __name__ == '__main__':
     if proceed_with_upload:
         # data to upload
         upload_pkg = {}
-        tmpf = tempfile.TemporaryFile()
-        upload_successful = False
         
         ## start transaction, dump data to temp file
-        try:
-            result = []
-            for row in conn.execute("select ts_utc, clamp1, clamp2 from 'main'.power").fetchall():
-                result.append((datetime.fromtimestamp(row[0]), row[1], row[2]))
-            
-            if result:
-                upload_pkg['power'] = result
-                conn.execute("delete from 'main'.power")
+        for table_name in TABLE_TO_PICKLE_MAP:
+            dict_key, columns = TABLE_TO_PICKLE_MAP[table_name]
             
             result = []
-            for row in conn.execute("""
-                select ts_utc, sophies_room, living_room, outside, basement,
-                       master, office, master_zone, living_room_zone
-                  from 'main'.room_temp
-            """).fetchall():
-                result.append((datetime.fromtimestamp(row[0]), row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]))
+            select_query = "select %s from 'main'.%s" % (", ".join(columns), table_name)
+            for row in conn.execute(select_query).fetchall():
+                r = [datetime.utcfromtimestamp(row[0])]
+                r.extend(row[1:])
+                result.append(r)
             
             if result:
-                upload_pkg['room_temp'] = result
-                conn.execute("delete from 'main'.room_temp")
+                upload_pkg[dict_key] = result
+                conn.execute("delete from 'main'.%s" % (table_name,))
             
-            if upload_pkg:
+        
+        if upload_pkg:
+            tmpf = tempfile.TemporaryFile()
+            upload_successful = False
+            
+            try:
                 # pickle the dict
                 log.debug("pickling")
                 pickle.dump(upload_pkg, tmpf)
@@ -199,15 +179,17 @@ if __name__ == '__main__':
                     upload_successful = True
                 else:
                     log.critical("FAILURE: %d -- %s" % (r.code, r.msg))
-            else:
-                log.info("no data to upload")
-                upload_successful = True
-        finally:
-            tmpf.close()
+                
+            finally:
+                tmpf.close()
+                
+                if upload_successful:
+                    log.debug("committing transaction")
+                    conn.commit()
+                else:
+                    log.debug("rolling back transaction")
+                    conn.rollback()
             
-            if upload_successful:
-                log.debug("committing transaction")
-                conn.commit()
-            else:
-                log.debug("rolling back transaction")
-                conn.rollback()
+        else:
+            log.info("no data to upload")
+            upload_successful = True
