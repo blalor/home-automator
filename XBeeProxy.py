@@ -34,6 +34,7 @@ class XBeeProxy(XBee):
         self.socket = _socket
         
         # set receive timeout to 0.25 seconds
+        # http://bugs.python.org/file827/getsockopt_test.py
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVTIMEO, struct.pack('LL', 0, 250000))
         
         super(XBee, self).__init__(None, shorthand, callback)
@@ -76,8 +77,6 @@ class XBeeProxy(XBee):
                     # timeout if using SO_RCVTIMEO and MSG_WAITALL
                     # print 'timeout reading data'
                     pass
-            
-        
     
     # }}}
     
@@ -89,7 +88,6 @@ class XBeeProxyTests(unittest.TestCase):
         self.s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.s.connect('foo')
         self.proxyUnderTest = XBeeProxy(self.s)
-        
     
     
     def tearDown(self):
@@ -97,8 +95,10 @@ class XBeeProxyTests(unittest.TestCase):
         del self.s
         del self.proxyUnderTest
     
+    
     def testOne(self):
         self.proxyUnderTest.send('at', bar='baz')
+    
     
     def testFail(self):
         self.assertRaises(AttributeError, lambda: self.proxyUnderTest.qwerty('at', bar='baz'))

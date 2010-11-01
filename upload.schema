@@ -10,3 +10,4 @@ insert into upload_state values ('temperature', 'last_uploaded_timestamp', 0);
 insert into upload_state values ('humidity',    'last_uploaded_timestamp', 0);
 insert into upload_state values ('light',       'last_uploaded_timestamp', 0);
 insert into upload_state values ('furnace',     'last_uploaded_timestamp', 0);
+insert into upload_state values ('oil_tank',    'last_uploaded_timestamp', 0);

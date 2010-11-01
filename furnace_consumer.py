@@ -148,6 +148,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
         return success
     
     # }}}
+    
     # {{{ start_timer
     def start_timer(self):
         return self.__send_data('S')

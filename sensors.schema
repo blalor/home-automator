@@ -3,4 +3,4 @@ CREATE TABLE temperature (ts_utc integer,  node_id text, temp_C real, primary ke
 CREATE TABLE humidity (ts_utc integer,  node_id text, rel_humid real, primary key(ts_utc,node_id));
 CREATE TABLE light (ts_utc integer,  node_id text, light_val real, primary key(ts_utc,node_id));
 CREATE TABLE furnace (ts_utc integer primary key asc,  zone_active boolean);
-
+CREATE TABLE oil_tank (ts_utc integer primary key asc,  height real);
