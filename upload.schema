@@ -5,6 +5,8 @@ CREATE TABLE upload_state (
     primary key (table_name, prop_name)
 );
 
-insert into upload_state values ('power', 'last_uploaded_timestamp', 0);
+insert into upload_state values ('power',       'last_uploaded_timestamp', 0);
 insert into upload_state values ('temperature', 'last_uploaded_timestamp', 0);
-insert into upload_state values ('humidity', 'last_uploaded_timestamp', 0);
+insert into upload_state values ('humidity',    'last_uploaded_timestamp', 0);
+insert into upload_state values ('light',       'last_uploaded_timestamp', 0);
+insert into upload_state values ('furnace',     'last_uploaded_timestamp', 0);
