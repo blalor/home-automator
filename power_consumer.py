@@ -35,7 +35,7 @@ class PowerConsumer(consumer.DatabaseConsumer):
                 self.dbc.execute(
                     "insert into power (ts_utc, clamp1, clamp2) values (?, ?, ?)",
                     (
-                        time.mktime(now.timetuple()),
+                        time.mktime(now.utctimetuple()),
                         clamp1,
                         clamp2,
                     )

@@ -32,7 +32,7 @@ class FuelOilTankConsumer(consumer.DatabaseConsumer):
                 self.dbc.execute(
                     "insert into oil_tank (ts_utc, height) values (?, ?)",
                     (
-                        time.mktime(now.timetuple()),
+                        time.mktime(now.utctimetuple()),
                         height,
                     )
                 )

@@ -85,7 +85,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                             
                     try:
                         print ((
-                            time.mktime(now.timetuple()),
+                            time.mktime(now.utctimetuple()),
                             self.sample_record['Z']
                         ))
                         self.dbc.execute(
@@ -94,7 +94,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                             values (?, ?)
                             """,
                             (
-                                time.mktime(now.timetuple()),
+                                time.mktime(now.utctimetuple()),
                                 self.sample_record['Z']
                             )
                         )

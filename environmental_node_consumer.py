@@ -34,7 +34,7 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
                 self.dbc.execute(
                     "insert into humidity (ts_utc, node_id, rel_humid) values (?, ?, ?)",
                     (
-                        time.mktime(now.timetuple()),
+                        time.mktime(now.utctimetuple()),
                         self._format_addr(frame['source_addr_long']),
                         rel_humid,
                     )
@@ -43,7 +43,7 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
                 self.dbc.execute(
                     "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)",
                     (
-                        time.mktime(now.timetuple()),
+                        time.mktime(now.utctimetuple()),
                         self._format_addr(frame['source_addr_long']),
                         temp_C,
                     )

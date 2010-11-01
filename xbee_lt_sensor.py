@@ -45,7 +45,7 @@ class LightTempConsumer(consumer.DatabaseConsumer):
             self.dbc.execute(
                 "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)",
                 (
-                    time.mktime(now.timetuple()),
+                    time.mktime(now.utctimetuple()),
                     formatted_addr,
                     temp_C,
                 )
@@ -54,7 +54,7 @@ class LightTempConsumer(consumer.DatabaseConsumer):
             self.dbc.execute(
                 "insert into light (ts_utc, node_id, light_val) values (?, ?, ?)",
                 (
-                    time.mktime(now.timetuple()),
+                    time.mktime(now.utctimetuple()),
                     formatted_addr,
                     light,
                 )
