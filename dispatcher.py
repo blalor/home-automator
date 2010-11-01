@@ -125,7 +125,7 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
         ## we *must* ensure that finish() gets called, which only happens when
         ## handle() returns successfully.
         
-        header_len = struct.calcsize('I')
+        header_len = struct.calcsize('!I')
         
         try:
             connection_alive = True
@@ -135,7 +135,7 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
                 self.request.settimeout(0.25)
                 
                 try:
-                    header_dat = self.request.recv(header_len)
+                    header_dat = self.request.recv(header_len, socket.MSG_WAITALL)
                     if len(header_dat) == 0:
                         print 'peer closed the connection'
                         connection_alive = False
@@ -143,8 +143,8 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
                     elif len(header_dat) != header_len:
                         print '%d bytes for header, need %d: %s' % (len(header_dat), header_len, " ".join(['%.2x' % (ord(c),) for c in header_dat]))
                     else:
-                        data_len = struct.unpack('I', header_dat)[0]
-                        packet = pickle.loads(self.request.recv(data_len))
+                        data_len = struct.unpack('!I', header_dat)[0]
+                        packet = pickle.loads(self.request.recv(data_len, socket.MSG_WAITALL))
                         self.server.send_packet(packet[0], **packet[1])
                 except socket.timeout:
                     # timeout reading data
@@ -156,10 +156,9 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
                 try:
                     # pull a packet from the queue, with a blocking timeout
                     packet = self.packet_queue.get(True, 1)
+                    data = pickle.dumps(packet, pickle.HIGHEST_PROTOCOL)
                     
-                    data = pickle.dumps(packet)
-                    
-                    self.request.send(struct.pack('I', len(data)))
+                    self.request.sendall(struct.pack('!I', len(data)))
                     self.request.sendall(data)
                 except Queue.Empty:
                     pass

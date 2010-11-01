@@ -2,32 +2,58 @@
 # -*- coding: utf-8 -*-
 
 import sys
-import consumer
-import time
-import signal
-import traceback
 
+import time
+import traceback
 import re
 
+import signal
+import threading
+import Queue
+
+import consumer
+import SimpleXMLRPCServer
+
 class FurnaceConsumer(consumer.DatabaseConsumer):
-    data_re = re.compile(r'''^([A-Z][A-Za-z]*)\[(\w+)\]=(-?\d+)$''')
+    data_re = re.compile(r'''^([ZT])=(\d+)$''')
     
     # {{{ __init__
-    def __init__(self, db_name, xbee_addresses = []):
-        consumer.DatabaseConsumer.__init__(self, db_name, xbee_addresses = xbee_addresses)
+    def __init__(self, db_name, xbee_address = []):
+        consumer.DatabaseConsumer.__init__(self, db_name, xbee_addresses = [xbee_address])
+        
+        ## only supporting a single address
+        self.xbee_address = self.xbee_addresses[0]
         
         self.buf = ''
         self.found_start = False
         self.sample_record = {}
+        self.frame_id = '\x01'
+        
+        # queue for packets that aren't explicitly handled in handle_packet,
+        # so that __send_data can get to them.
+        self.extra_messages_queue = Queue.Queue()
+        
     # }}}
     
     # {{{ handle_packet
     def handle_packet(self, frame):
-        print frame
+        # {'id': 'zb_rx',
+        #  'options': '\x01',
+        #  'rf_data': 'T: 770.42 Cm: 375.14 RH:  42.88 Vcc: 3332 tempC:  19.04 tempF:  66.27\r\n',
+        #  'source_addr': '\xda\xe0',
+        #  'source_addr_long': '\x00\x13\xa2\x00@2\xdc\xdc'}
+        
+        # print frame
+        
+        if frame['id'] != 'zb_rx':
+            print >>sys.stderr, "unhandled frame id", frame['id']
+            self.extra_messages_queue.put(frame)
+            return
+        
         now = self.utcnow()
         
         ## convert the data to chars and append to buffer
-        self.buf = self.buf + ''.join([chr(c) for c in xb.data])
+        self.buf += frame['rf_data']
         
         ## process each line found in the buffer
         while self.buf.count('\n') > 0:
@@ -44,16 +70,8 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                 self.found_start = True
                 
                 # default to unknown values
-                self.sample_record = {
-                    'Tc:sophies_room' : None,
-                    'Tc:living_room'  : None,
-                    'Tc:outside'      : None,
-                    'Tc:basement'     : None,
-                    'Tc:master'       : None,
-                    'Tc:office'       : None,
-                    'Z:master'        : None,
-                    'Z:living_room'   : None,
-                }
+                self.sample_record['Z'] = None
+                self.sample_record['T'] = None
             
             elif line == "<end>":
                 # finalize
@@ -66,27 +84,18 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                             print >>sys.stderr, "missing value for", k, "at", now.isoformat()
                             
                     try:
+                        print ((
+                            time.mktime(now.timetuple()),
+                            self.sample_record['Z']
+                        ))
                         self.dbc.execute(
                             """
-                            insert into room_temp (
-                                ts_utc, sophies_room, living_room, outside,
-                                basement, master, office,
-                                master_zone, living_room_zone
-                            ) values (
-                                ?, ?, ?, ?,
-                                ?, ?, ?,
-                                ?, ?)
+                            insert into furnace (ts_utc, zone_active)
+                            values (?, ?)
                             """,
                             (
                                 time.mktime(now.timetuple()),
-                                self.sample_record['Tc:sophies_room'],
-                                self.sample_record['Tc:living_room'],
-                                self.sample_record['Tc:outside'],
-                                self.sample_record['Tc:basement'],
-                                self.sample_record['Tc:master'],
-                                self.sample_record['Tc:office'],
-                                self.sample_record['Z:living_room'],
-                                self.sample_record['Z:master'],
+                                self.sample_record['Z']
                             )
                         )
                     except:
@@ -99,33 +108,88 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                     print >>sys.stderr, "cannot match", line
                     continue
                     
-                sample_type, sample_label, sample_value = match.groups()
+                sample_type, sample_value = match.groups()
                 sample_value = int(sample_value)
                 
-                if sample_type == 'Tc':
-                    # convert from int/long value sent from Arduino to °C
-                    sample_value /= 10000.0
-                    
-                    # oh, what the hell. put °F in there, too
-                    self.sample_record['Tf:' + sample_label] = (sample_value * 1.8) + 32.0
-                    
-                    
-                self.sample_record[sample_type + ':' + sample_label] = sample_value
+                self.sample_record[sample_type] = sample_value
+                
+    
     # }}}
     
+    # {{{ __send_data
+    def __send_data(self, data):
+        success = False
+        
+        # increment frame_id but constrain to 1..255.  Seems to go
+        # 2,4,6,…254,1,3,5…255. Whatever.
+        self.frame_id = chr(((ord(self.frame_id) + 1) % 255) + 1)
+        
+        self.xbee.zb_tx_request(frame_id = self.frame_id, dest_addr_long = self.xbee_address, data = data)
+        
+        while True:
+            try:
+                frame = self.extra_messages_queue.get(True, 1)
+                
+                # print frame
+                if (frame['id'] == 'zb_tx_status') and \
+                   (frame['frame_id'] == self.frame_id):
+                    
+                    if frame['delivery_status'] == '\x00':
+                        # success!
+                        success = True
+                        print >>sys.stderr, "sent data with %d retries" % ord(frame['retries'])
+                    else:
+                        print >>sys.stderr, "send failed after %d retries with status 0x%2X" % (ord(frame['retries']), ord(frame['status']))
+                    
+                    break
+            except Queue.Empty:
+                pass
+            
+        return success
+    
+    # }}}
+    # {{{ start_timer
+    def start_timer(self):
+        return self.__send_data('S')
+    
+    # }}}
+    
+    # {{{ cancel_timer
+    def cancel_timer(self):
+        return self.__send_data('C')
+    
+    # }}}
+    
+    # {{{ get_time_remaining
+    def get_time_remaining(self):
+        return self.sample_record['T']
+    
+    # }}}
+
 
 
 def main():
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    fc = None
+    fc = FurnaceConsumer('sensors.db', xbee_address = '00:11:22:33:44:55:66:4d')
+    xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10101))
     
     try:
-        fc = FurnaceConsumer('sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:4D'])
+        # fire up XMLRPCServer
+        xrs.register_introspection_functions()
+        xrs.register_function(fc.start_timer, 'start_timer')
+        xrs.register_function(fc.cancel_timer, 'cancel_timer')
+        xrs.register_function(fc.get_time_remaining, 'get_time_remaining')
+        
+        xrs_thread = threading.Thread(target = xrs.serve_forever)
+        xrs_thread.daemon = True
+        xrs_thread.start()
+        
         fc.process_forever()
     finally:
-        if fc != None:
-            fc.shutdown()
+        fc.shutdown()
+        xrs.shutdown()
+    
 
 
 if __name__ == '__main__':

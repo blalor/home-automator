@@ -19,39 +19,48 @@ class InvalidDeviceTypeException(Exception):
 
 
 # {{{{ LightTempConsumer
-class LightTempConsumer(consumer.BaseConsumer):
-    nodes_are_sensors = {
-        '00:11:22:33:44:55:66:a5': True,
-        '00:11:22:33:44:55:66:7d': True,
-    }
-    
+class LightTempConsumer(consumer.DatabaseConsumer):
     # {{{ handle_packet
     def handle_packet(self, frame):
-        if frame['id'] == 'zb_rx_io_data':
-            formatted_addr = self._format_addr(frame['src_addr_long'])
-            
-            if formatted_addr not in self.nodes_are_sensors:
-                self.xbee.remote_at(command='DD', frame_id = self.next_frame_id(), dest_addr_long = frame['src_addr_long'])
-            
-            elif self.nodes_are_sensors[formatted_addr]:
-                samples = frame['samples'][0]
-                
-                light = samples['adc-1']
-                
-                temp_C = (self._sample_to_mv(samples['adc-2']) - 500.0) / 10.0
-                temp_F = (1.8*temp_C)+32
-                
-                # humidity = ((sample_to_mv(samples['adc-3']) * 108.2 / 33.2) / 5000.0 - 0.16) / 0.0062
-                
-                print '%s sensor reading -- light: %d temp %.1fF/%.1fC' % (formatted_addr, light, temp_F, temp_C)
+        now = self.utcnow()
         
-        elif (frame['id'] == 'remote_at_response') and (frame['command'] == 'DD'):
-            formatted_addr = self._format_addr(frame['source_addr_long'])
+        if frame['id'] != 'zb_rx_io_data':
+            print >>sys.stderr, "unhandled frame id", frame['id']
+            return
+        
+        formatted_addr = self._format_addr(frame['source_addr_long'])
+        
+        samples = frame['samples'][0]
+        
+        light = samples['adc-1']
+        
+        temp_C = (self._sample_to_mv(samples['adc-2']) - 500.0) / 10.0
+        temp_F = (1.8*temp_C)+32
+        
+        # humidity = ((sample_to_mv(samples['adc-3']) * 108.2 / 33.2) / 5000.0 - 0.16) / 0.0062
+        
+        # print '%s sensor reading -- light: %d temp %.1fF/%.1fC' % (formatted_addr, light, temp_F, temp_C)
+        
+        try:
+            self.dbc.execute(
+                "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)",
+                (
+                    time.mktime(now.timetuple()),
+                    formatted_addr,
+                    temp_C,
+                )
+            )
             
-            if struct.unpack('>I', frame['parameter'])[0] in (0x03000E, 0x030008):
-                self.nodes_are_sensors[formatted_addr] = True
-            else:
-                self.nodes_are_sensors[formatted_addr] = False
+            self.dbc.execute(
+                "insert into light (ts_utc, node_id, light_val) values (?, ?, ?)",
+                (
+                    time.mktime(now.timetuple()),
+                    formatted_addr,
+                    light,
+                )
+            )
+        except:
+            traceback.print_exc()
     
     # }}}
 
@@ -63,7 +72,7 @@ def main():
     sc = None
     
     try:
-        sc = LightTempConsumer()
+        sc = LightTempConsumer('sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:a5', '00:11:22:33:44:55:66:7d'])
         sc.process_forever()
     finally:
         if sc != None:

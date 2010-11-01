@@ -15,7 +15,20 @@ import socket, XBeeProxy
 from pprint import pprint
 
 help_message = '''
-The help message goes here.
+
+    required:
+        --host=<hostname>
+        --port=<port>
+    
+    querying:
+        --query-all=<long_address> : queries all parameters of the device
+    
+    setting:
+        --config-file=<name of module in path>
+        --set=<long address> : sets parameters for a single device
+        --set-all : sets parameters for all configured devices
+        
+        --point-to-me : sets DH/DL for the target device(s)
 '''
 
 ALL_PARAMETERS = (
@@ -126,12 +139,12 @@ def send_and_wait():
 class Usage(Exception):
     def __init__(self, msg):
         self.msg = msg
+    
 
 
 def main(argv=None):
     if argv is None:
         argv = sys.argv
-    
     
     set_addr = None
     set_all = False
@@ -158,7 +171,7 @@ def main(argv=None):
             )
         except getopt.error, msg:
             raise Usage(msg)
-    
+        
         # option processing
         for option, value in opts:
             if option in ("-h", "--help"):
