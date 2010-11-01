@@ -45,13 +45,43 @@ auth_handler.add_password("<basic http auth realm>", upload_url, "<userid>", "<p
 urlopener = urllib2.build_opener(MultipartPostHandler.MultipartPostHandler,
                                  auth_handler)
 
+TEMP_SENSOR_NODE_MAP = {
+    '00:11:22:33:44:55:66:22' : 'th_test1.temperature',
+    '00:11:22:33:44:55:66:DC' : 'th_test2.temperature',
+    '00:11:22:33:44:55:66:A5' : 'sensor0.temperature',
+    '00:11:22:33:44:55:66:7D' : 'wall_router0.temperature',
+}
+
+HUMID_SENSOR_NODE_MAP = {
+    '00:11:22:33:44:55:66:22': 'th_test1.humidity',
+    '00:11:22:33:44:55:66:DC': 'th_test2.humidity',
+}
+
+def identity_map(row):
+    return row
+
+
+def temp_map(row):
+    trow = row
+    trow[1] = TEMP_SENSOR_NODE_MAP[row[1]]
+    
+    return trow
+
+
+def humid_map(row):
+    trow = row
+    trow[1] = HUMID_SENSOR_NODE_MAP[row[1]]
+    
+    return trow
+
+
 TABLE_TO_PICKLE_MAP = {
-    'power' : ('power', ('ts_utc', 'clamp1', 'clamp2')),
-    'temperature' : ('temperature', ('ts_utc', 'node_id', 'temp_C')),
-    'humidity' : ('humidity', ('ts_utc', 'node_id', 'rel_humid')),
+    'power' : ('power', ('ts_utc', 'clamp1', 'clamp2'), identity_map),
+    'temperature' : ('temperature', ('ts_utc', 'node_id', 'temp_C'), temp_map),
+    'humidity' : ('humidity', ('ts_utc', 'node_id', 'rel_humid'), humid_map),
     # 'light' : '',
     # 'furnace' : '',
-    'oil_tank' : ('oil_tank', ('ts_utc', 'height')),
+    'oil_tank' : ('oil_tank', ('ts_utc', 'height'), identity_map),
 }
 
 if __name__ == '__main__':
@@ -144,14 +174,14 @@ if __name__ == '__main__':
         
         ## start transaction, dump data to temp file
         for table_name in TABLE_TO_PICKLE_MAP:
-            dict_key, columns = TABLE_TO_PICKLE_MAP[table_name]
+            dict_key, columns, map_func = TABLE_TO_PICKLE_MAP[table_name]
             
             result = []
             select_query = "select %s from 'main'.%s" % (", ".join(columns), table_name)
             for row in conn.execute(select_query).fetchall():
                 r = [datetime.utcfromtimestamp(row[0])]
                 r.extend(row[1:])
-                result.append(r)
+                result.append(map_func(r))
             
             if result:
                 upload_pkg[dict_key] = result
