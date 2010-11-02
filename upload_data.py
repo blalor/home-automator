@@ -36,6 +36,7 @@ import MultipartPostHandler
 import cPickle as pickle
 import tempfile
 from datetime import datetime
+from pprint import pprint
 
 upload_url = "http://example.com/upload_data"
 
@@ -63,14 +64,14 @@ def identity_map(row):
 
 def temp_map(row):
     trow = row
-    trow[1] = TEMP_SENSOR_NODE_MAP[row[1]]
+    trow[1] = TEMP_SENSOR_NODE_MAP[row[1].upper()]
     
     return trow
 
 
 def humid_map(row):
     trow = row
-    trow[1] = HUMID_SENSOR_NODE_MAP[row[1]]
+    trow[1] = HUMID_SENSOR_NODE_MAP[row[1].upper()]
     
     return trow
 
@@ -92,6 +93,7 @@ def main():
     ## attach databases
     conn.execute("attach database 'sensors.db' as 'primary'")
     log.debug("'primary' attached")
+    conn.execute("begin exclusive transaction")
     
     proceed_with_upload = True
     
@@ -113,14 +115,13 @@ def main():
             log.debug("moving '%s' from 'primary' to 'main'" % (table_name,))
             
             ## insert rows into upload db
-            conn.execute(
-                """
-                insert into 'main'.%(table_name)s
-                    select * from 'primary'.%(table_name)s
-                     where 'primary'.%(table_name)s.ts_utc > ?
-                """ % {'table_name':table_name},
-                (last_uploaded_rec,)
-            )
+            query = """
+            insert into 'main'.%(table_name)s
+                select * from 'primary'.%(table_name)s
+                 where 'primary'.%(table_name)s.ts_utc > ?
+            """ % {'table_name':table_name}
+            log.debug(query)
+            conn.execute(query, (last_uploaded_rec,))
             
             result = conn.execute(
                 "select max(ts_utc) from 'main'.%s" % (table_name,)
@@ -178,42 +179,45 @@ def main():
                 upload_pkg[dict_key] = result
                 conn.execute("delete from 'main'.%s" % (table_name,))
             
+        pprint(upload_pkg)
+        # log.debug("rolling back transaction")
+        # conn.rollback()
         
-        if upload_pkg:
-            tmpf = tempfile.TemporaryFile()
-            upload_successful = False
-            
-            try:
-                # pickle the dict
-                log.debug("pickling")
-                pickle.dump(upload_pkg, tmpf)
-                
-                # seek to the beginning of the temp file so that it can be read by the
-                # uploader
-                tmpf.seek(0)
-                
-                ## now, upload the data
-                log.debug("uploading")
-                resp = urlopener.open(upload_url, {'pickle_file': tmpf})
-                
-                if resp.code == 200:
-                    upload_successful = True
-                else:
-                    log.critical("FAILURE: %d -- %s" % (r.code, r.msg))
-                
-            finally:
-                tmpf.close()
-                
-                if upload_successful:
-                    log.debug("committing transaction")
-                    conn.commit()
-                else:
-                    log.debug("rolling back transaction")
-                    conn.rollback()
-            
-        else:
-            log.info("no data to upload")
-            upload_successful = True
+        # if upload_pkg:
+        #     tmpf = tempfile.TemporaryFile()
+        #     upload_successful = False
+        #     
+        #     try:
+        #         # pickle the dict
+        #         log.debug("pickling")
+        #         pickle.dump(upload_pkg, tmpf)
+        #         
+        #         # seek to the beginning of the temp file so that it can be read by the
+        #         # uploader
+        #         tmpf.seek(0)
+        #         
+        #         ## now, upload the data
+        #         log.debug("uploading")
+        #         resp = urlopener.open(upload_url, {'pickle_file': tmpf})
+        #         
+        #         if resp.code == 200:
+        #             upload_successful = True
+        #         else:
+        #             log.critical("FAILURE: %d -- %s" % (r.code, r.msg))
+        #         
+        #     finally:
+        #         tmpf.close()
+        #         
+        #         if upload_successful:
+        #             log.debug("committing transaction")
+        #             conn.commit()
+        #         else:
+        #             log.debug("rolling back transaction")
+        #             conn.rollback()
+        #     
+        # else:
+        #     log.info("no data to upload")
+        #     upload_successful = True
 
 
 if __name__ == '__main__':

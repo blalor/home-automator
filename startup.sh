@@ -1,6 +1,10 @@
 #!/bin/sh -ex
 
 cd $(dirname $0)
-(while :; do ./dispatcher.py /dev/tty.usbserial-FTE4Y0J6 115200; done) &
-sleep 1
-(while :; do ./combined_consumer.py; done) &
+./dispatcher.py /dev/ttyUSB0 38400
+sleep 5
+./environmental_node_consumer.py
+./fuel_oil_tank_consumer.py
+./furnace_consumer.py
+./power_consumer.py
+./xbee_lt_sensor.py
