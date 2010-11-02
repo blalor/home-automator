@@ -9,6 +9,9 @@ import XBeeProxy
 
 import datetime
 
+import logging
+import logging.handlers
+
 class Disconnected(Exception):
     pass
 
@@ -19,6 +22,8 @@ class BaseConsumer(object):
     
     # {{{ __init__
     def __init__(self, xbee_addresses = []):
+        self._logger = logging.getLogger(self.__class__.__name__)
+        
         self.xbee_addresses = [self._parse_addr(xba) for xba in xbee_addresses]
         
         self.__shutdown = False
@@ -30,6 +35,7 @@ class BaseConsumer(object):
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         
         self.__socket.connect(self.__default_socket_path)
+        self._logger.info("connected to %s", self.__default_socket_path)
         
         self.xbee = XBeeProxy.XBeeProxy(self.__socket)
     # }}}
@@ -37,6 +43,7 @@ class BaseConsumer(object):
     # {{{ _parse_addr
     def _parse_addr(self, addr):
         paddr = None
+        
         if addr != None:
             paddr = "".join(chr(int(x, 16)) for x in addr.split(":"))
         
@@ -75,6 +82,8 @@ class BaseConsumer(object):
         self.__shutdown = True
         self.__socket.shutdown(socket.SHUT_RDWR)
         self.__socket.close()
+        
+        self._logger.info("shutdown complete")
     # }}}
     
     # {{{ process_forever
@@ -102,7 +111,7 @@ class BaseConsumer(object):
     # {{{ handle_packet
     def handle_packet(self, packet):
         ## for testing only; subclasses should override
-        print packet
+        self._logger.debug(unicode(str(packet), errors='replace'))
     # }}}
     
     # {{{ utcnow
@@ -133,8 +142,18 @@ class DatabaseConsumer(BaseConsumer):
 
 
 if __name__ == '__main__':
+    handler = logging.handlers.RotatingFileHandler('logs/consumer.log',
+                                                   maxBytes=(5 * 1024 * 1024),
+                                                   backupCount=5)
+    
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
+    
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
     try:
         BaseConsumer().process_forever()
     finally:
         BaseConsumer().shutdown()
+        logging.shutdown()
 

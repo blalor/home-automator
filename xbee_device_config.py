@@ -12,6 +12,8 @@ import getopt
 
 import socket, XBeeProxy
 
+import logging
+
 from pprint import pprint
 
 help_message = '''
@@ -252,6 +254,7 @@ def main(argv=None):
                     SL = frame['parameter']
             
         for section in sections:
+            logging.info("configuring %s", section)
             addr = addr_to_bin(section)
             
             if point_to_me:
@@ -262,7 +265,7 @@ def main(argv=None):
             for opt in CONFIG_DATA[section].keys():
                 val = CONFIG_DATA[section][opt]
                 
-                print section, opt, val
+                logging.debug(str((section, opt, val)))
                 
                 resend = True
                 while resend:
@@ -271,21 +274,24 @@ def main(argv=None):
                     
                     while True:
                         frame = xbee.wait_read_frame()
-                        print frame
+                        logging.debug(str(frame))
+                        
                         if (frame['id'] == 'remote_at_response') and \
                            (frame['frame_id'] == frame_id) and \
                            (frame['source_addr_long'] == addr):
                            
                             if frame['status'] == '\x00':
                                 resend = False
+                                logging.info("set %s = '%s'", opt, unicode(val, errors='replace'))
                             elif frame['status'] == '\x04':
-                                print >>sys.stderr, "timeout"
+                                logging.warn("timeout setting %s", opt)
                             else:
                                 resend = False
-                                print >>sys.stderr, "error setting %s: %02X" % (opt, ord(frame['status']))
+                                logging.error("error setting %s: %02X", opt, ord(frame['status']))
+                            
                             break
             
-            print 'sending "AC"'
+            logging.debug('sending "AC"')
             resend = True
             while resend:
                 frame_id = chr(ord(frame_id) + 1)
@@ -293,15 +299,17 @@ def main(argv=None):
                 
                 while True:
                     frame = xbee.wait_read_frame()
-                    print frame
+                    logging.debug(str(frame))
+                    
                     if (frame['id'] == 'remote_at_response') and (frame['frame_id'] == frame_id) and (frame['source_addr_long'] == addr):
                         if frame['status'] == '\x00':
                             resend = False
+                            logging.info("changes applied")
                         elif frame['status'] == '\x04':
-                            print >>sys.stderr, "timeout"
+                            logging.warn("timeout sending AC")
                         else:
                             resend = False
-                            print >>sys.stderr, "error querying %s: %02X" % (opt, ord(frame['status']))
+                            logging.error("error sending AC: %02X", ord(frame['status']))
                         break
             
             
@@ -333,23 +341,29 @@ def main(argv=None):
                                 # print opt, val #, "(%d)" % int(val, 16)
                                 data[opt] = val
                             else:
-                                print >>sys.stderr, "no parameter in frame for command %s!" % opt
-                                print >>sys.stderr, frame
+                                logging.error("no parameter in frame for command %s! %s", opt, str(frame))
                         elif frame['status'] == '\x04':
-                            print "timeout"
+                            logging.warn("timeout querying %s", opt)
                         else:
                             resend = False
-                            print >>sys.stderr, "error querying %s: %02X" % (opt, ord(frame['status']))
+                            logging.error("error querying %s: %02X", opt, ord(frame['status']))
                             
                         break
                     
         pprint(data)
     
-    print "cleaning up"
+    logging.debug("cleaning up")
     xbee.halt()
     _socket.shutdown(socket.SHUT_RDWR)
     _socket.close()
+    logging.shutdown()
+    
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s %(levelname)s %(name)s -- %(message)s',)
+                        # filename='uploader.log',
+                        # filemode='a')
+    
     sys.exit(main())

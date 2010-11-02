@@ -13,9 +13,10 @@ from __future__ import with_statement
 import sys, os
 import signal
 import time
+import daemonizer
 
 import SocketServer, socket
-import traceback
+import logging, logging.handlers
 
 import threading
 import Queue
@@ -31,6 +32,9 @@ class XBeeDispatcher(SocketServer.ThreadingTCPServer):
     
     def __init__(self, address, ser):
         self.serial = ser
+        
+        self._logger = logging.getLogger(self.__class__.__name__)
+        
         # SocketServer.ThreadingUnixStreamServer.__init__(self, address, XBeeRequestHandler)
         SocketServer.TCPServer.__init__(self, address, XBeeRequestHandler)
     
@@ -45,7 +49,7 @@ class XBeeDispatcher(SocketServer.ThreadingTCPServer):
         # SocketServer.ThreadingUnixStreamServer.server_activate(self)
         SocketServer.TCPServer.server_activate(self)
         
-        print 'request queue size:', self.request_queue_size
+        self._logger.info('request queue size: %d', self.request_queue_size)
         
         ## start XBee communication thread here
         self.xbee_thread = xbee.XBee(self.serial, callback = self.dispatch_packet)
@@ -92,7 +96,7 @@ class XBeeDispatcher(SocketServer.ThreadingTCPServer):
         
         
         if not found_clients:
-            print >>sys.stderr, "no active clients"
+            self._logger.error("no active clients")
     
     
     def send_packet(self, name, **kwargs):
@@ -103,11 +107,17 @@ class XBeeDispatcher(SocketServer.ThreadingTCPServer):
 
 
 class XBeeRequestHandler(SocketServer.BaseRequestHandler):
+    def __init__(self, request, client_address, server):
+        self._logger = logging.getLogger(self.__class__.__name__)
+        
+        SocketServer.BaseRequestHandler.__init__(self, request, client_address, server)
+    
+    
     def enqueue_packet(self, packet):
         try:
             self.packet_queue.put(packet)
         except Queue.Full:
-            print >>sys.stderr, "queue is full!"
+            self._logger.error("queue is full!")
     
     
     def setup(self):
@@ -118,7 +128,7 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
         
         ## think this might only work with TCP sockets
         self.request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        print >>sys.stderr, "new connection"
+        self._logger.debug("new connection")
     
     
     def handle(self):
@@ -137,11 +147,11 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
                 try:
                     header_dat = self.request.recv(header_len, socket.MSG_WAITALL)
                     if len(header_dat) == 0:
-                        print 'peer closed the connection'
+                        self._logger.info('peer closed the connection')
                         connection_alive = False
                         continue
                     elif len(header_dat) != header_len:
-                        print '%d bytes for header, need %d: %s' % (len(header_dat), header_len, " ".join(['%.2x' % (ord(c),) for c in header_dat]))
+                        self._logger.error('%d bytes for header, need %d: %s', len(header_dat), header_len, " ".join(['%.2x' % (ord(c),) for c in header_dat]))
                     else:
                         data_len = struct.unpack('!I', header_dat)[0]
                         packet = pickle.loads(self.request.recv(data_len, socket.MSG_WAITALL))
@@ -163,15 +173,13 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
                 except Queue.Empty:
                     pass
                 except socket.error:
-                    print >>sys.stderr, "socket error sending packet to client"
-                    traceback.print_exc()
+                    self._logger.error("socket error sending packet to client", exc_info = True)
                     
                     connection_alive = False
                     
                     
         except:
-            print >>sys.stderr, "exception handling request"
-            traceback.print_exc()
+            self._logger.error("exception handling request", exc_info = True)
         
     
     def finish(self):
@@ -188,12 +196,24 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
 
 
 def main():
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    
+    daemonizer.createDaemon()
+    
+    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/dispatcher.log",
+                                                   maxBytes=(5 * 1024 * 1024),
+                                                   backupCount=5)
+    
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
+    
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
     server = XBeeDispatcher(
         # "socket",
         ('', 9999),
         serial.Serial(port=sys.argv[1], baudrate=int(sys.argv[2]),rtscts=True)
     )
-    
     
     # The signals SIGKILL and SIGSTOP cannot be caught, blocked, or ignored.
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
@@ -203,11 +223,13 @@ def main():
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print >>sys.stderr, "Interrupt caught, shutting down"
+        logging.info("Interrupt caught, shutting down")
     finally:
-        print "cleaning up"
+        logging.debug("cleaning up")
         server.server_close()
-        os.unlink("socket")
+        # os.unlink("socket")
+        logging.shutdown()
+    
 
 
 if __name__ == '__main__':

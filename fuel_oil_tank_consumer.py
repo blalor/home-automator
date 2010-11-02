@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import sys
+import sys, os
 import consumer
 import time
-import traceback
+import logging, logging.handlers
 import signal
+import daemonizer
 
 class FuelOilTankConsumer(consumer.DatabaseConsumer):
     # {{{ handle_packet
@@ -19,7 +20,7 @@ class FuelOilTankConsumer(consumer.DatabaseConsumer):
         now = self.utcnow()
         
         if frame['id'] != 'zb_rx':
-            print >>sys.stderr, "unhandled frame id", frame['id']
+            self._logger.error("unhandled frame id %s", frame['id'])
             return
         
         # remove trailing whitespace
@@ -37,25 +38,38 @@ class FuelOilTankConsumer(consumer.DatabaseConsumer):
                     )
                 )
             except:
-                traceback.print_exc()
+                self._logger.error("unable to insert record into database", exc_info = True)
             
         else:
-            print >>sys.stderr, "bad data: " + data
+            self._logger.error("bad data: %s", unicode(data, error = 'replace'))
     
     # }}}
 
 
 def main():
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    
+    daemonizer.createDaemon()
+    
+    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/oil_tank.log",
+                                                   maxBytes=(5 * 1024 * 1024),
+                                                   backupCount=5)
+    
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
+    
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    pc = None
+    fc = FuelOilTankConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:0a'])
     
     try:
-        pc = PowerConsumer('sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:0a'])
-        pc.process_forever()
+        fc.process_forever()
     finally:
-        if pc != None:
-            pc.shutdown()
+        fc.shutdown()
+        logging.shutdown()
+    
 
 
 if __name__ == '__main__':

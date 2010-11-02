@@ -27,7 +27,7 @@
 
 import os
 import sqlite3
-import logging
+import logging, logging.handlers
 
 # http://www.hackorama.com/python/upload.shtml
 import urllib2
@@ -84,16 +84,7 @@ TABLE_TO_PICKLE_MAP = {
     'oil_tank' : ('oil_tank', ('ts_utc', 'height'), identity_map),
 }
 
-if __name__ == '__main__':
-    os.chdir(os.path.abspath(os.path.dirname(__file__)))
-    
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s %(levelname)s %(name)s -- %(message)s',
-                        filename='uploader.log',
-                        filemode='a')
-    
-    log = logging.getLogger("uploader")
-    
+def main():
     log.info("starting up in %s" % (os.getcwd(),))
     
     conn = sqlite3.connect("upload.db", timeout = 30, isolation_level = "EXCLUSIVE")
@@ -223,3 +214,25 @@ if __name__ == '__main__':
         else:
             log.info("no data to upload")
             upload_successful = True
+
+
+if __name__ == '__main__':
+    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    
+    handler = logging.handlers.RotatingFileHandler('logs/uploader.log',
+                                                   maxBytes=(5 * 1024 * 1024),
+                                                   backupCount=5)
+    
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
+    
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
+    log = logging.getLogger("uploader")
+    
+    try:
+        main()
+    finally:
+        logging.shutdown()
+    
+

@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import sys
+import sys, os
 import consumer
 import time
-import traceback
 import signal
+import logging, logging.handlers
+import daemonizer
 
 class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
     # {{{ handle_packet
@@ -19,17 +20,18 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
         now = self.utcnow()
         
         if frame['id'] != 'zb_rx':
-            print >>sys.stderr, "unhandled frame id", frame['id']
+            self._logger.error("unhandled frame id %s", frame['id'])
             return
         
         sdata = frame['rf_data'].strip().split()
-        
+        self._logger.debug(sdata)
         # Parse the sample
         # T: 778.21 Cm: 377.93 RH:  47.17 Vcc: 3342 tempC:  13.31 tempF:  55.96
         if sdata[0] == 'T:':
             rel_humid = float(sdata[5])
             temp_C = float(sdata[9])
             
+            self._logger.debug(str((time.mktime(now.utctimetuple()), rel_humid, temp_C)))
             try:
                 self.dbc.execute(
                     "insert into humidity (ts_utc, node_id, rel_humid) values (?, ?, ?)",
@@ -49,22 +51,36 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
                     )
                 )
             except:
-                traceback.print_exc()
+                self._logger.error("unable to insert records to database", exc_info = True)
         else:
-            print >>sys.stderr, "bad data:", sdata
+            self._logger.error("bad data: %s", unicode(sdata, error = 'replace'))
     # }}}
 
+
 def main():
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    
+    daemonizer.createDaemon()
+    
+    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/env_node.log",
+                                                   maxBytes=(5 * 1024 * 1024),
+                                                   backupCount=5)
+    
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
+    
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    c = None
+    c = EnvironmentalNodeConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:dc'])
     
     try:
-        c = EnvironmentalNodeConsumer('sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:dc'])
         c.process_forever()
     finally:
-        if c != None:
-            c.shutdown()
+        c.shutdown()
+        logging.shutdown()
+    
 
 
 if __name__ == '__main__':

@@ -18,6 +18,7 @@ import cPickle as pickle
 import socket
 import struct
 import threading
+import logging
 
 class PeerDiedError(Exception):
     pass
@@ -26,6 +27,8 @@ class PeerDiedError(Exception):
 class XBeeProxy(XBee):
     # {{{ __init__
     def __init__(self, _socket, shorthand=True, callback=None):
+        self._logger = logging.getLogger(self.__class__.__name__)
+        
         # probably wouldn't need the lock for writing *and* reading, except 
         # that both set the timeout…
         self.__socket_send_lock = threading.RLock()

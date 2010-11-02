@@ -4,7 +4,7 @@
 import sys
 
 import time
-import traceback
+import logging, logging.handlers
 import re
 
 import signal
@@ -46,7 +46,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
         # print frame
         
         if frame['id'] != 'zb_rx':
-            print >>sys.stderr, "unhandled frame id", frame['id']
+            self._logger.error("unhandled frame id %s", frame['id'])
             self.extra_messages_queue.put(frame)
             return
         
@@ -65,7 +65,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
             
             if line == "<begin>":
                 if self.found_start:
-                    print >>sys.stderr, "found <begin> without <end>; discarding collected data"
+                    self._logger.error("found <begin> without <end>; discarding collected data")
                 
                 self.found_start = True
                 
@@ -76,18 +76,14 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
             elif line == "<end>":
                 # finalize
                 if not self.found_start:
-                    print >>sys.stderr, "found <end> without <begin>; discarding collected data"
+                    self._logger.error("found <end> without <begin>; discarding collected data")
                     
                 else:
                     for k in self.sample_record.keys():
                         if self.sample_record[k] == None:
-                            print >>sys.stderr, "missing value for", k, "at", now.isoformat()
+                            self._logger.warn("missing value for %s", k)
                             
                     try:
-                        print ((
-                            time.mktime(now.utctimetuple()),
-                            self.sample_record['Z']
-                        ))
                         self.dbc.execute(
                             """
                             insert into furnace (ts_utc, zone_active)
@@ -99,13 +95,13 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                             )
                         )
                     except:
-                        traceback.print_exc()
+                        self._logger.error("unable to insert record into database", exc_info = True)
                     
                 self.found_start = False
             else:
                 match = self.data_re.match(line)
                 if not match:
-                    print >>sys.stderr, "cannot match", line
+                    self._logger.error("cannot match %s", line)
                     continue
                     
                 sample_type, sample_value = match.groups()
@@ -137,9 +133,9 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                     if frame['delivery_status'] == '\x00':
                         # success!
                         success = True
-                        print >>sys.stderr, "sent data with %d retries" % ord(frame['retries'])
+                        self._logger.debug("sent data with %d retries", ord(frame['retries']))
                     else:
-                        print >>sys.stderr, "send failed after %d retries with status 0x%2X" % (ord(frame['retries']), ord(frame['status']))
+                        self._logger.error("send failed after %d retries with status 0x%2X", ord(frame['retries']), ord(frame['status']))
                     
                     break
             except Queue.Empty:
@@ -151,12 +147,14 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     
     # {{{ start_timer
     def start_timer(self):
+        self._logger.info("starting timer")
         return self.__send_data('S')
     
     # }}}
     
     # {{{ cancel_timer
     def cancel_timer(self):
+        self._logger.info("cancelling timer")
         return self.__send_data('C')
     
     # }}}
@@ -170,9 +168,22 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
 
 
 def main():
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    
+    daemonizer.createDaemon()
+    
+    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/furnace.log",
+                                                   maxBytes=(5 * 1024 * 1024),
+                                                   backupCount=5)
+    
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
+    
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    fc = FurnaceConsumer('sensors.db', xbee_address = '00:11:22:33:44:55:66:4d')
+    fc = FurnaceConsumer(basedir + '/sensors.db', xbee_address = '00:11:22:33:44:55:66:4d')
     xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10101))
     
     try:
@@ -190,6 +201,7 @@ def main():
     finally:
         fc.shutdown()
         xrs.shutdown()
+        logging.shutdown()
     
 
 

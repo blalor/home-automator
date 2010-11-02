@@ -7,12 +7,13 @@ Created by Brian Lalor on 2010-10-29.
 Copyright (c) 2010 __MyCompanyName__. All rights reserved.
 """
 
-import sys
-import os
+import sys, os
+import daemonizer
 
 import consumer
 import signal
 import struct
+import logging, logging.handlers
 
 class InvalidDeviceTypeException(Exception):
     pass
@@ -25,7 +26,7 @@ class LightTempConsumer(consumer.DatabaseConsumer):
         now = self.utcnow()
         
         if frame['id'] != 'zb_rx_io_data':
-            print >>sys.stderr, "unhandled frame id", frame['id']
+            self._logger.error("unhandled frame id %s", frame['id'])
             return
         
         formatted_addr = self._format_addr(frame['source_addr_long'])
@@ -60,23 +61,36 @@ class LightTempConsumer(consumer.DatabaseConsumer):
                 )
             )
         except:
-            traceback.print_exc()
+            self._logger.error("unable to insert record into database", exc_info = True)
     
     # }}}
 
 # }}}}
 
 def main():
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    
+    daemonizer.createDaemon()
+    
+    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/lt_sensor.log",
+                                                   maxBytes=(5 * 1024 * 1024),
+                                                   backupCount=5)
+    
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
+    
+    logging.getLogger().addHandler(handler)
+    logging.getLogger().setLevel(logging.DEBUG)
+    
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    sc = None
+    sc = LightTempConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:a5', '00:11:22:33:44:55:66:7d'])
     
     try:
-        sc = LightTempConsumer('sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:a5', '00:11:22:33:44:55:66:7d'])
         sc.process_forever()
     finally:
-        if sc != None:
-            sc.shutdown()
+        sc.shutdown()
+        logging.shutdown()
+    
 
 
 if __name__ == '__main__':
