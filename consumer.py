@@ -17,7 +17,7 @@ class Disconnected(Exception):
 
 
 class BaseConsumer(object):
-    __default_socket_path = ('tonidoplug', 9999)
+    __default_socket_path = ('localhost', 9999)
     __frame_id = '\x01'
     
     # {{{ __init__
@@ -114,9 +114,9 @@ class BaseConsumer(object):
         self._logger.debug(unicode(str(packet), errors='replace'))
     # }}}
     
-    # {{{ utcnow
-    def utcnow(self):
-        return datetime.datetime.utcnow()
+    # {{{ now
+    def now(self):
+        return datetime.datetime.now()
     # }}}
     
 

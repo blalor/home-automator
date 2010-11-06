@@ -9,7 +9,7 @@ Copyright (c) 2010 __MyCompanyName__. All rights reserved.
 
 import sys, os
 import daemonizer
-
+import time
 import consumer
 import signal
 import struct
@@ -23,7 +23,7 @@ class InvalidDeviceTypeException(Exception):
 class LightTempConsumer(consumer.DatabaseConsumer):
     # {{{ handle_packet
     def handle_packet(self, frame):
-        now = self.utcnow()
+        now = self.now()
         
         if frame['id'] != 'zb_rx_io_data':
             self._logger.error("unhandled frame id %s", frame['id'])
@@ -46,7 +46,7 @@ class LightTempConsumer(consumer.DatabaseConsumer):
             self.dbc.execute(
                 "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)",
                 (
-                    time.mktime(now.utctimetuple()),
+                    time.mktime(now.timetuple()),
                     formatted_addr,
                     temp_C,
                 )
@@ -55,7 +55,7 @@ class LightTempConsumer(consumer.DatabaseConsumer):
             self.dbc.execute(
                 "insert into light (ts_utc, node_id, light_val) values (?, ?, ?)",
                 (
-                    time.mktime(now.utctimetuple()),
+                    time.mktime(now.timetuple()),
                     formatted_addr,
                     light,
                 )

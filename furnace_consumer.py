@@ -51,7 +51,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
             self.extra_messages_queue.put(frame)
             return
         
-        now = self.utcnow()
+        now = self.now()
         
         ## convert the data to chars and append to buffer
         self.buf += frame['rf_data']
@@ -91,7 +91,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                             values (?, ?)
                             """,
                             (
-                                time.mktime(now.utctimetuple()),
+                                time.mktime(now.timetuple()),
                                 self.sample_record['Z']
                             )
                         )

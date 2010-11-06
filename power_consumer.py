@@ -17,7 +17,7 @@ class PowerConsumer(consumer.DatabaseConsumer):
         #  'src_addr': '\x18:',
         #  'src_addr_long': '\x00\x13\xa2\x00@:[\n'}
         
-        now = self.utcnow()
+        now = self.now()
         
         if frame['id'] != 'zb_rx':
             self._logger.error("unhandled frame id %s", frame['id'])
@@ -35,7 +35,7 @@ class PowerConsumer(consumer.DatabaseConsumer):
                 self.dbc.execute(
                     "insert into power (ts_utc, clamp1, clamp2) values (?, ?, ?)",
                     (
-                        time.mktime(now.utctimetuple()),
+                        time.mktime(now.timetuple()),
                         clamp1,
                         clamp2,
                     )

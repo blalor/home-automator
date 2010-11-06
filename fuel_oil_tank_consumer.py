@@ -17,7 +17,7 @@ class FuelOilTankConsumer(consumer.DatabaseConsumer):
         #  'src_addr': '\x18:',
         #  'src_addr_long': '\x00\x13\xa2\x00@:[\n'}
         
-        now = self.utcnow()
+        now = self.now()
         
         if frame['id'] != 'zb_rx':
             self._logger.error("unhandled frame id %s", frame['id'])
@@ -33,7 +33,7 @@ class FuelOilTankConsumer(consumer.DatabaseConsumer):
                 self.dbc.execute(
                     "insert into oil_tank (ts_utc, height) values (?, ?)",
                     (
-                        time.mktime(now.utctimetuple()),
+                        time.mktime(now.timetuple()),
                         height,
                     )
                 )

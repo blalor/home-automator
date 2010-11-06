@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 ## This script should (probably?) be run via cron, every X minutes (probably
-## 1-5 or so).  It moves all data from the primary database, sensors.db, to
+## 1-5 or so).  It moves all data from the source database, sensors.db, to
 ## the upload database, upload.db.  It then uploads the data to the remote
 ## server, where graphing, analysis, etc. is performed. This allows processes
 ## which are frequently inserting data into the database to do so unhindered.
@@ -35,7 +35,6 @@ import MultipartPostHandler
 
 import cPickle as pickle
 import tempfile
-from datetime import datetime
 from pprint import pprint
 
 upload_url = "http://example.com/upload_data"
@@ -63,14 +62,14 @@ def identity_map(row):
 
 
 def temp_map(row):
-    trow = row
+    trow = list(row)
     trow[1] = TEMP_SENSOR_NODE_MAP[row[1].upper()]
     
     return trow
 
 
 def humid_map(row):
-    trow = row
+    trow = list(row)
     trow[1] = HUMID_SENSOR_NODE_MAP[row[1].upper()]
     
     return trow
@@ -91,133 +90,117 @@ def main():
     conn = sqlite3.connect("upload.db", timeout = 30, isolation_level = "EXCLUSIVE")
     
     ## attach databases
-    conn.execute("attach database 'sensors.db' as 'primary'")
-    log.debug("'primary' attached")
-    conn.execute("begin exclusive transaction")
+    conn.execute("attach database 'sensors.db' as 'source'")
+    log.debug("'source' attached")
     
+    table_name = None
     proceed_with_upload = True
     
-    ## walk through each table in the map
-    for table_name in TABLE_TO_PICKLE_MAP:
-        last_uploaded_rec = int(
-            conn.execute(
-                """
-                select value
-                  from 'main'.upload_state
-                 where table_name = ?
-                   and prop_name = 'last_uploaded_timestamp'
-                """,
-                (table_name,)
-            ).fetchone()[0]
-        )
+    try:
+        with conn:
+            ## walk through each table in the map
+            for table_name in TABLE_TO_PICKLE_MAP:
+                last_uploaded_rec = int(
+                    conn.execute(
+                        """
+                        select value
+                          from 'main'.upload_state
+                         where table_name = ?
+                           and prop_name = 'last_uploaded_timestamp'
+                        """,
+                        (table_name,)
+                    ).fetchone()[0]
+                )
+                
+                log.debug("last_uploaded_rec for %s is %d", table_name, last_uploaded_rec)
+                
+                ## insert rows into upload db
+                query = """
+                insert into 'main'.%(table_name)s
+                    select * from 'source'.%(table_name)s
+                     where 'source'.%(table_name)s.ts_utc > ?
+                """ % {'table_name':table_name}
+                log.debug("query: %s, args: %s", query, (last_uploaded_rec,))
+                conn.execute(query, (last_uploaded_rec,))
+                
+                result = conn.execute(
+                    "select max(ts_utc) from 'main'.%s" % (table_name,)
+                ).fetchone()[0]
+                
+                if result != None:
+                    last_uploaded_rec = int(result)
+                else:
+                    log.error("no last_uploaded_rec!")
+                
+                ## delete rows from source table
+                conn.execute(
+                    """delete from 'source'.%s where ts_utc < ?""" % (table_name,),
+                    (last_uploaded_rec - (15 * 60),) # 15 minutes
+                )
+                
+                ## update metadata table
+                conn.execute(
+                    """
+                    update 'main'.upload_state
+                       set value = ?
+                     where table_name = ?
+                       and prop_name = 'last_uploaded_timestamp'
+                    """,
+                    (last_uploaded_rec, table_name)
+                )
+                
+                log.debug("done moving '%s'; last uploaded rec: %d", table_name, last_uploaded_rec)
+            
+    except:
+        proceed_with_upload = False
+        log.critical("unable to migrate data to upload.db for table %s", table_name, exc_info = True)
         
-        try:
-            log.debug("moving '%s' from 'primary' to 'main'" % (table_name,))
-            
-            ## insert rows into upload db
-            query = """
-            insert into 'main'.%(table_name)s
-                select * from 'primary'.%(table_name)s
-                 where 'primary'.%(table_name)s.ts_utc > ?
-            """ % {'table_name':table_name}
-            log.debug(query)
-            conn.execute(query, (last_uploaded_rec,))
-            
-            result = conn.execute(
-                "select max(ts_utc) from 'main'.%s" % (table_name,)
-            ).fetchone()[0]
-            
-            if result != None:
-                last_uploaded_rec = int(result)
-            
-            ## delete rows from primary table
-            conn.execute(
-                """delete from 'primary'.%s where ts_utc < ?""" % (table_name,),
-                (last_uploaded_rec - (15 * 60),) # 15 minutes
-            )
-            
-            ## update metadata table
-            conn.execute(
-                """
-                update 'main'.upload_state
-                   set value = ?
-                 where table_name = ?
-                   and prop_name = 'last_uploaded_timestamp'
-                """,
-                (table_name, last_uploaded_rec)
-            )
-            
-            log.debug("done moving '%s'" % (table_name,))
-            
-            conn.commit()
-        except:
-            proceed_with_upload = False
-            
-            log.critical("unable to migrate data to upload.db for table %s" % (table_name,), exc_info = True)
-            conn.rollback()
-    
-    
-    conn.execute("detach 'primary'")
-    log.debug("'primary' detached")
+    conn.execute("detach 'source'")
+    log.debug("'source' detached")
     
     if proceed_with_upload:
         # data to upload
         upload_pkg = {}
         
-        ## start transaction, dump data to temp file
-        for table_name in TABLE_TO_PICKLE_MAP:
-            dict_key, columns, map_func = TABLE_TO_PICKLE_MAP[table_name]
+        with conn:
+            ## start transaction, dump data to temp file
+            for table_name in TABLE_TO_PICKLE_MAP:
+                dict_key, columns, map_func = TABLE_TO_PICKLE_MAP[table_name]
+                
+                result = []
+                select_query = "select %s from 'main'.%s" % (", ".join(columns), table_name)
+                for row in conn.execute(select_query).fetchall():
+                    result.append(map_func(row))
+                
+                if result:
+                    upload_pkg[dict_key] = result
+                    conn.execute("delete from 'main'.%s" % (table_name,))
             
-            result = []
-            select_query = "select %s from 'main'.%s" % (", ".join(columns), table_name)
-            for row in conn.execute(select_query).fetchall():
-                r = [datetime.utcfromtimestamp(row[0])]
-                r.extend(row[1:])
-                result.append(map_func(r))
+            # pprint(upload_pkg)
             
-            if result:
-                upload_pkg[dict_key] = result
-                conn.execute("delete from 'main'.%s" % (table_name,))
-            
-        pprint(upload_pkg)
-        # log.debug("rolling back transaction")
-        # conn.rollback()
-        
-        # if upload_pkg:
-        #     tmpf = tempfile.TemporaryFile()
-        #     upload_successful = False
-        #     
-        #     try:
-        #         # pickle the dict
-        #         log.debug("pickling")
-        #         pickle.dump(upload_pkg, tmpf)
-        #         
-        #         # seek to the beginning of the temp file so that it can be read by the
-        #         # uploader
-        #         tmpf.seek(0)
-        #         
-        #         ## now, upload the data
-        #         log.debug("uploading")
-        #         resp = urlopener.open(upload_url, {'pickle_file': tmpf})
-        #         
-        #         if resp.code == 200:
-        #             upload_successful = True
-        #         else:
-        #             log.critical("FAILURE: %d -- %s" % (r.code, r.msg))
-        #         
-        #     finally:
-        #         tmpf.close()
-        #         
-        #         if upload_successful:
-        #             log.debug("committing transaction")
-        #             conn.commit()
-        #         else:
-        #             log.debug("rolling back transaction")
-        #             conn.rollback()
-        #     
-        # else:
-        #     log.info("no data to upload")
-        #     upload_successful = True
+            if upload_pkg:
+                tmpf = tempfile.TemporaryFile()
+                
+                # pickle the dict
+                log.debug("pickling")
+                pickle.dump(upload_pkg, tmpf)
+                
+                # seek to the beginning of the temp file so that it can be read by the
+                # uploader
+                tmpf.seek(0)
+                
+                ## now, upload the data
+                log.debug("uploading")
+                resp = urlopener.open(upload_url, {'pickle_file': tmpf})
+                
+                if resp.code == 200:
+                    # upload was successful
+                    log.info("upload successful")
+                else:
+                    log.critical("FAILURE: %d -- %s" % (r.code, r.msg))
+                
+            else:
+                log.info("no data to upload")
 
 
 if __name__ == '__main__':
