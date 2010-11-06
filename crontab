@@ -1,0 +1,2 @@
+# m h  dom mon dow   command
+*/2 * * * * cd /media/disk1part1/blalor/xbee_dispatcher && ./upload_data.py
