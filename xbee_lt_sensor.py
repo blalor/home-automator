@@ -36,6 +36,11 @@ class LightTempConsumer(consumer.DatabaseConsumer):
         light = samples['adc-1']
         
         temp_C = (self._sample_to_mv(samples['adc-2']) - 500.0) / 10.0
+        
+        if formatted_addr.lower() == "00:11:22:33:44:55:66:7d":
+            # router; adjust temp down 4°C
+            temp_C -= 4.0
+        
         temp_F = (1.8*temp_C)+32
         
         # humidity = ((sample_to_mv(samples['adc-3']) * 108.2 / 33.2) / 5000.0 - 0.16) / 0.0062
