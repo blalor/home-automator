@@ -31,6 +31,7 @@ help_message = '''
         --set-all : sets parameters for all configured devices
         
         --point-to-me : sets DH/DL for the target device(s)
+        --write : writes data to NVRAM
 '''
 
 ALL_PARAMETERS = (
@@ -152,6 +153,7 @@ def main(argv=None):
     set_all = False
     config_file = None
     point_to_me = False
+    write_to_nvram = False
     
     query_addr = None
     
@@ -169,6 +171,7 @@ def main(argv=None):
                  "query-all=",
                  "config-file=",
                  "point-to-me",
+                 "write",
                  "host=", "port="]
             )
         except getopt.error, msg:
@@ -199,6 +202,9 @@ def main(argv=None):
             
             if option in ("--point-to-me",):
                 point_to_me = True
+            
+            if option in ("--write",):
+                write_to_nvram = True
             
         
         if (host == None) or (port == None):
@@ -311,6 +317,30 @@ def main(argv=None):
                             resend = False
                             logging.error("error sending AC: %02X", ord(frame['status']))
                         break
+            
+            if not write_to_nvram:
+                logging.warn("not writing changes")
+            else:
+                logging.debug('writing changes')
+                resend = True
+                while resend:
+                    frame_id = chr(ord(frame_id) + 1)
+                    xbee.remote_at(command = 'WR', frame_id = frame_id, dest_addr_long = addr)
+                    
+                    while True:
+                        frame = xbee.wait_read_frame()
+                        logging.debug(str(frame))
+                        
+                        if (frame['id'] == 'remote_at_response') and (frame['frame_id'] == frame_id) and (frame['source_addr_long'] == addr):
+                            if frame['status'] == '\x00':
+                                resend = False
+                                logging.info("changes written")
+                            elif frame['status'] == '\x04':
+                                logging.warn("timeout sending WR")
+                            else:
+                                resend = False
+                                logging.error("error sending WR: %02X", ord(frame['status']))
+                            break
             
             
         

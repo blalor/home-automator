@@ -1,22 +1,22 @@
 ## config file for all XBee devices we know about
 
 CONFIG_DATA = {
-    '00:11:22:33:44:55:66:4d' : {
-        ## furnace timer/monitor
-        'NI' : 'Furnace',
-        'BD' : '\x04',
-    },
+    # '00:11:22:33:44:55:66:4d' : {
+    #     ## furnace timer/monitor
+    #     'NI' : 'Furnace',
+    #     'BD' : '\x04',
+    # },
     '00:11:22:33:44:55:66:0a' : {
         ## power monitor
         'NI' : 'Power',
         'BD' : '\x04',
     },
-    '00:11:22:33:44:55:66:22' : {
-        ## temp/humidity 1
-
-        'NI' : 'T/H Test 1',
-        'BD' : '\x04',
-    },
+    # '00:11:22:33:44:55:66:22' : {
+    #     ## temp/humidity 1
+    #     
+    #     'NI' : 'T/H Test 1',
+    #     'BD' : '\x04',
+    # },
     '00:11:22:33:44:55:66:dc' : {
         ## temp/humidity 2
         'NI' : 'T/H Test 2',
