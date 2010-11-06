@@ -220,6 +220,8 @@ if __name__ == '__main__':
     
     try:
         main()
+    except:
+        log.critical("main() failed", exc_info = True)
     finally:
         logging.shutdown()
     
