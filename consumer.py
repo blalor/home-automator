@@ -154,6 +154,8 @@ if __name__ == '__main__':
     logging.getLogger().addHandler(handler)
     logging.getLogger().setLevel(logging.DEBUG)
     
+    daemonizer.createDaemon()
+    
     try:
         BaseConsumer().process_forever()
     finally:

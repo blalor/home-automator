@@ -29,11 +29,11 @@ class LightTempConsumer(consumer.DatabaseConsumer):
             self._logger.error("unhandled frame id %s", frame['id'])
             return
         
-        formatted_addr = self._format_addr(frame['source_addr_long'])
-        
         if 'samples' not in frame:
             self._logger.error("no samples in frame!")
-            continue
+            return
+        
+        formatted_addr = self._format_addr(frame['source_addr_long'])
         
         samples = frame['samples'][0]
         
