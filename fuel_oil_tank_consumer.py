@@ -7,15 +7,16 @@ import time
 import logging, logging.handlers
 import signal
 import daemonizer
+import struct
 
 class FuelOilTankConsumer(consumer.DatabaseConsumer):
     # {{{ handle_packet
     def handle_packet(self, frame):
-        # {'id': 'zb_rx',
-        #  'options': '\x01',
-        #  'rf_data': '#23:71#\r\n',
-        #  'src_addr': '\x18:',
-        #  'src_addr_long': '\x00\x13\xa2\x00@:[\n'}
+        # {'source_addr_long': '\x00\x13\xa2\x00@2\xdc\xcf',
+        #  'rf_data': '\x00\x00\x00\x00\n',
+        #  'source_addr': '\xeb\x81',
+        #  'id': 'zb_rx',
+        #  'options': '\x01'}
         
         now = self.now()
         
@@ -62,7 +63,7 @@ def main():
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    fc = FuelOilTankConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:0a'])
+    fc = FuelOilTankConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:cf'])
     
     try:
         fc.process_forever()
