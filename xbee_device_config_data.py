@@ -1,6 +1,18 @@
 ## config file for all XBee devices we know about
 
 CONFIG_DATA = {
+    '00:11:22:33:44:55:66:00' : {
+        # the coordinator
+        'NI' : 'Coordinator',
+        'BD' : '\x07', # 115200
+        
+        # these values based on the old CPX4 coordinator; this is so we can 
+        # clone it
+        'ID' : 'G-8\x97\xbb&U\x03',
+        'II' : '\x11u',
+        'SC' : '\x80',
+        'ZS' : '\x00',
+    },
     # '00:11:22:33:44:55:66:4d' : {
     #     ## furnace timer/monitor
     #     'NI' : 'Furnace',

@@ -31,40 +31,56 @@ class LightTempConsumer(consumer.DatabaseConsumer):
         
         formatted_addr = self._format_addr(frame['source_addr_long'])
         
+        if 'samples' not in frame:
+            self._logger.error("no samples in frame!")
+            continue
+        
         samples = frame['samples'][0]
         
-        light = samples['adc-1']
+        light = None
+        temp_C = None
+        temp_F = None
         
-        temp_C = (self._sample_to_mv(samples['adc-2']) - 500.0) / 10.0
+        if 'adc-1' not in samples:
+            self._logger.warn("missing adc-1 sample")
+        else:
+            light = samples['adc-1']
         
-        if formatted_addr.lower() == "00:11:22:33:44:55:66:7d":
-            # router; adjust temp down 4°C
-            temp_C -= 4.0
-        
-        temp_F = (1.8*temp_C)+32
+        if 'adc-2' not in samples:
+            self._logger.warn("missing adc-2 sample")
+        else:
+            temp_C = (self._sample_to_mv(samples['adc-2']) - 500.0) / 10.0
+            
+            if formatted_addr.lower() == "00:11:22:33:44:55:66:7d":
+                # router; adjust temp down 4°C
+                temp_C -= 4.0
+            
+            temp_F = (1.8*temp_C)+32
         
         # humidity = ((sample_to_mv(samples['adc-3']) * 108.2 / 33.2) / 5000.0 - 0.16) / 0.0062
         
         # print '%s sensor reading -- light: %d temp %.1fF/%.1fC' % (formatted_addr, light, temp_F, temp_C)
         
         try:
-            self.dbc.execute(
-                "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)",
-                (
-                    time.mktime(now.timetuple()),
-                    formatted_addr,
-                    temp_C,
+            if temp_C != None:
+                self.dbc.execute(
+                    "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)",
+                    (
+                        time.mktime(now.timetuple()),
+                        formatted_addr,
+                        temp_C,
+                    )
                 )
-            )
             
-            self.dbc.execute(
-                "insert into light (ts_utc, node_id, light_val) values (?, ?, ?)",
-                (
-                    time.mktime(now.timetuple()),
-                    formatted_addr,
-                    light,
+            if light != None:
+                self.dbc.execute(
+                    "insert into light (ts_utc, node_id, light_val) values (?, ?, ?)",
+                    (
+                        time.mktime(now.timetuple()),
+                        formatted_addr,
+                        light,
+                    )
                 )
-            )
         except:
             self._logger.error("unable to insert record into database", exc_info = True)
     

@@ -89,22 +89,25 @@ class BaseConsumer(object):
     # {{{ process_forever
     def process_forever(self):
         while not self.__shutdown:
-            frame = self.xbee.wait_read_frame()
-            
-            src_addr = None
-            if 'source_addr_long' in frame:
-                src_addr = frame['source_addr_long']
-            
-            _do_process = True
-            if self.xbee_addresses:
-                if (src_addr != None) and (src_addr not in self.xbee_addresses):
-                    _do_process = False
+            try:
+                frame = self.xbee.wait_read_frame()
                 
-            if _do_process:
-                self.handle_packet(frame)
-            else:
-                # no match on address; filtered.
-                pass
+                src_addr = None
+                if 'source_addr_long' in frame:
+                    src_addr = frame['source_addr_long']
+                
+                _do_process = True
+                if self.xbee_addresses:
+                    if (src_addr != None) and (src_addr not in self.xbee_addresses):
+                        _do_process = False
+                
+                if _do_process:
+                    self.handle_packet(frame)
+                else:
+                    # no match on address; filtered.
+                    pass
+            except:
+                self._logger.critical("exception handling packet", exc_info = True)
         
     # }}}
     
