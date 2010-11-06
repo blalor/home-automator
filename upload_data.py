@@ -85,6 +85,7 @@ TABLE_TO_PICKLE_MAP = {
 }
 
 def main():
+    os.chdir(os.path.abspath(os.path.dirname(__file__)))
     log.info("starting up in %s" % (os.getcwd(),))
     
     conn = sqlite3.connect("upload.db", timeout = 30, isolation_level = "EXCLUSIVE")
