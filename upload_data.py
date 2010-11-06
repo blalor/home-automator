@@ -201,7 +201,7 @@ def main():
                     log.critical("FAILURE: %d -- %s" % (r.code, r.msg))
                 
             else:
-                log.info("no data to upload")
+                log.warn("no data to upload")
 
 
 if __name__ == '__main__':
@@ -214,7 +214,7 @@ if __name__ == '__main__':
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
     
     logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.INFO)
     
     log = logging.getLogger("uploader")
     
