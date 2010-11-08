@@ -1,0 +1,9 @@
+CREATE TABLE temp_humid (
+    ts_utc integer not null,
+    channel text not null,
+    temp_C real not null,
+    humidity real not null,
+    measured_cap real,
+    period real,
+    primary key(ts_utc, channel)
+);
