@@ -23,16 +23,26 @@ CONFIG_DATA = {
         'NI' : 'Power',
         'BD' : '\x04',
     },
-    # '00:11:22:33:44:55:66:22' : {
-    #     ## temp/humidity 1
-    #     
-    #     'NI' : 'T/H Test 1',
-    #     'BD' : '\x04',
-    # },
+    '00:11:22:33:44:55:66:22' : {
+        ## temp/humidity 1
+        
+        'NI' : 'T/H Test 1',
+        'BD' : '\x04',
+    },
     '00:11:22:33:44:55:66:dc' : {
         ## temp/humidity 2
         'NI' : 'T/H Test 2',
         'BD' : '\x04',
+    },
+    '00:11:22:33:44:55:66:1d' : {
+        ## temp/humidity 3
+        'NI' : 'T/H Test 3',
+        'BD' : '\x04',
+    },
+    '00:11:22:33:44:55:66:da' : {
+        ## temp/humidity calibrator
+        'BD' : '\x04',
+        'RO' : '\xFF',
     },
     '00:11:22:33:44:55:66:cf' : {
         ## fuel oil tank level monitor
