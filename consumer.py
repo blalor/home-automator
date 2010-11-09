@@ -18,11 +18,10 @@ class Disconnected(Exception):
 
 
 class BaseConsumer(object):
-    __default_socket_path = ('localhost', 9999)
     __frame_id = '\x01'
     
     # {{{ __init__
-    def __init__(self, xbee_addresses = []):
+    def __init__(self, xbee_addresses = [], socket_dest = ('localhost', 9999)):
         self._logger = logging.getLogger(self.__class__.__name__)
         
         self.xbee_addresses = [self._parse_addr(xba) for xba in xbee_addresses]
@@ -35,8 +34,8 @@ class BaseConsumer(object):
         ## this may only apply to TCP sockets...
         self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
         
-        self.__socket.connect(self.__default_socket_path)
-        self._logger.info("connected to %s", self.__default_socket_path)
+        self.__socket.connect(socket_dest)
+        self._logger.info("connected to %s", socket_dest)
         
         self.xbee = XBeeProxy.XBeeProxy(self.__socket)
     # }}}
@@ -127,14 +126,14 @@ class BaseConsumer(object):
 
 class DatabaseConsumer(BaseConsumer):
     # {{{ __init__
-    def __init__(self, db_name, xbee_addresses = []):
+    def __init__(self, db_name, xbee_addresses = [], socket_dest = ('localhost', 9999)):
         import sqlite3
         
         self.dbc = sqlite3.connect(db_name,
                                    isolation_level = None,
                                    timeout = 5)
         
-        BaseConsumer.__init__(self, xbee_addresses)
+        BaseConsumer.__init__(self, xbee_addresses, socket_dest)
     # }}}
     
     # {{{ process_forever
