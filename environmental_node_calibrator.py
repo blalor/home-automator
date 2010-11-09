@@ -9,34 +9,50 @@ import logging, logging.handlers
 import daemonizer
 
 class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):
+    START_MARKER = '>>>'
+    END_MARKER = '<<<'
+    
+    def __init__(self, db_name):
+        consumer.DatabaseConsumer.__init__(self,
+                                           db_name,
+                                           socket_dest = ('tonidoplug', 9999),
+                                           xbee_addresses = ['00:11:22:33:44:55:66:dc',
+                                                             '00:11:22:33:44:55:66:22',
+                                                             '00:11:22:33:44:55:66:da',
+                                                             '00:11:22:33:44:55:66:7d',
+                                                             '00:11:22:33:44:55:66:a5'])
+        
+        self.__buffer = ''
+    
+    
     # {{{ handle_packet
     def handle_packet(self, frame):
         now = self.now()
         f_addr = self._format_addr(frame['source_addr_long'])
         
-        if frame['id'] != 'zb_rx':
-            self._logger.error("unhandled frame id %s", frame['id'])
-            return
-        
-        period = None
-        measured_capacitance = None
-        rel_humid = None
-        temp_C = None
-        channel = None
+        # timestamp
+        # period = None
+        # measured_capacitance = None
+        # rel_humid = None
+        # temp_C = None
+        # channel = f_addr
+        data_records = []
         
         if f_addr in ('00:11:22:33:44:55:66:dc', '00:11:22:33:44:55:66:22'):
-            channel = f_addr
+            if frame['id'] != 'zb_rx':
+                self._logger.error("unhandled frame id %s", frame['id'])
+                return
             
             # {'id': 'zb_rx',
             #  'options': '\x01',
             #  'rf_data': 'T: 770.42 Cm: 375.14 RH:  42.88 Vcc: 3332 tempC:  19.04 tempF:  66.27\r\n',
             #  'source_addr': '\xda\xe0',
             #  'source_addr_long': '\x00\x13\xa2\x00@2\xdc\xdc'}
-        
+            
             sdata = frame['rf_data'].strip().split()
-        
+            
             # self._logger.debug(sdata)
-        
+            
             # Parse the sample
             # T: 778.21 Cm: 377.93 RH:  47.17 Vcc: 3342 tempC:  13.31 tempF:  55.96
             if sdata[0] == 'T:':
@@ -44,27 +60,85 @@ class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):
                 measured_capacitance = float(sdata[3])
                 rel_humid = float(sdata[5])
                 temp_C = float(sdata[9])
-            
+                
+                # period = None
+                # measured_capacitance = None
+                # rel_humid = None
+                # temp_C = None
+                # channel = f_addr
+                data_records.append((time.mktime(now.timetuple()), period, measured_capacitance, rel_humid, temp_C, f_addr))
             else:
                 self._logger.error("bad data: %s", unicode(sdata, error = 'replace'))
-        
-        else:
+            
+        elif f_addr in ('00:11:22:33:44:55:66:7d', '00:11:22:33:44:55:66:a5'):
+            # wall router or lt sensor
+            if frame['id'] != 'zb_rx_io_data':
+                self._logger.error("unhandled frame id %s", frame['id'])
+                return
+            
+            if 'samples' not in frame:
+                self._logger.error("no samples in frame!")
+                return
+            
+            samples = frame['samples'][0]
+            
+            if 'adc-2' not in samples:
+                self._logger.warn("missing adc-2 sample")
+            else:
+                temp_C = (self._sample_to_mv(samples['adc-2']) - 500.0) / 10.0
+                
+                # period = None
+                # measured_capacitance = None
+                # rel_humid = None
+                # temp_C = None
+                # channel = f_addr
+                data_records.append((time.mktime(now.timetuple()), None, None, None, temp_C, f_addr))
+                
+            
+        elif f_addr == '00:11:22:33:44:55:66:da':
             # the breadboarded XBee
             
-            ## for sketch, test message size against NP, and set RO (packetization timeout) sufficiently high
+            if frame['id'] != 'zb_rx':
+                self._logger.error("unhandled frame id %s", frame['id'])
+                return
             
+            self.__buffer += frame['rf_data']
+            s_ind = self.__buffer.find(self.START_MARKER) + len(self.START_MARKER)
+            e_ind = self.__buffer.find(self.END_MARKER)
             
-        try:
-            self.dbc.execute(
-                "insert into temp_humid (ts_utc, channel, temp_C, humidity, measured_cap, period) values (?, ?, ?, ?, ?, ?)",
-                (
-                    time.mktime(now.timetuple()),
-                    self._format_addr(frame['source_addr_long']),
-                    rel_humid,
+            if (s_ind != (-1 + len(self.START_MARKER))) and (e_ind != -1):
+                self.__buffer = self.__buffer[s_ind:e_ind]
+                
+                for line in self.__buffer.split('\n'):
+                    line = line.strip().split()
+                    if not line:
+                        continue
+                    
+                    channel = line[0]
+                    temp_C = float(line[1])
+                    rel_humid = float(line[2])
+                    
+                    # period = None
+                    # measured_capacitance = None
+                    # rel_humid = None
+                    # temp_C = None
+                    # channel = f_addr
+                    data_records.append((time.mktime(now.timetuple()), None, None, rel_humid, temp_C, channel))
+                
+                self.__buffer = ''
+            
+        else:
+            self._logger.error("unhandled device %s", f_addr)
+        
+        if data_records:
+            try:
+                self.dbc.executemany(
+                    "insert into temp_humid (ts_utc, period, measured_cap, humidity, temp_C, channel) values (?, ?, ?, ?, ?, ?)",
+                    data_records
                 )
-            )
-        except:
-            self._logger.error("unable to insert records to database", exc_info = True)
+            except:
+                self._logger.error("unable to insert records to database", exc_info = True)
+        
         
     # }}}
 
@@ -81,12 +155,11 @@ def main():
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
     
     logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG)
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    c = EnvironmentalNodeCalibrator(basedir + '/calibration.db',
-                                    xbee_addresses = ['00:11:22:33:44:55:66:dc', '00:11:22:33:44:55:66:22'])
+    c = EnvironmentalNodeCalibrator(basedir + '/calibration.db')
     
     try:
         c.process_forever()
