@@ -42,7 +42,7 @@ CONFIG_DATA = {
     '00:11:22:33:44:55:66:da' : {
         ## temp/humidity calibrator
         'BD' : '\x04',
-        'RO' : '\xFF',
+        'RO' : '\x03',
     },
     '00:11:22:33:44:55:66:cf' : {
         ## fuel oil tank level monitor

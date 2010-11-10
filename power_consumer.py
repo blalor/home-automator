@@ -44,7 +44,7 @@ class PowerConsumer(consumer.DatabaseConsumer):
                 self._logger.error("unable to insert record into database", exc_info = True)
             
         else:
-            self._logger.error("bad data: %s", unicode(data, error = 'replace'))
+            self._logger.error("bad data: %s", unicode(data, errors = 'replace'))
     
     # }}}
 
