@@ -24,14 +24,11 @@ CONFIG_DATA = {
         'BD' : '\x04',
     },
     '00:11:22:33:44:55:66:22' : {
-        ## temp/humidity 1
-        
-        'NI' : 'T/H Test 1',
+        'NI' : 'Office T/H',
         'BD' : '\x04',
     },
     '00:11:22:33:44:55:66:dc' : {
-        ## temp/humidity 2
-        'NI' : 'T/H Test 2',
+        'NI' : 'Living Room T/H',
         'BD' : '\x04',
     },
     '00:11:22:33:44:55:66:1d' : {
@@ -39,11 +36,11 @@ CONFIG_DATA = {
         'NI' : 'T/H Test 3',
         'BD' : '\x04',
     },
-    '00:11:22:33:44:55:66:da' : {
-        ## temp/humidity calibrator
-        'BD' : '\x04',
-        'RO' : '\x03',
-    },
+    #'00:11:22:33:44:55:66:da' : {
+    #    ## temp/humidity calibrator
+    #    'BD' : '\x04',
+    #    'RO' : '\x03',
+    #},
     '00:11:22:33:44:55:66:cf' : {
         ## fuel oil tank level monitor
         'NI' : 'Fuel Oil Tank',
@@ -51,7 +48,7 @@ CONFIG_DATA = {
     },
     '00:11:22:33:44:55:66:a5' : {
         ## XBee Light/Temperature 
-        'NI' : 'L/T Sensor 1',
+        'NI' : 'Basement L/T',
 
         ## DD[1] should be 0x03000E
         ## DH, DL need to be our SH, SL
