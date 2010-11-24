@@ -46,15 +46,14 @@ urlopener = urllib2.build_opener(MultipartPostHandler.MultipartPostHandler,
                                  auth_handler)
 
 TEMP_SENSOR_NODE_MAP = {
-    '00:11:22:33:44:55:66:22' : 'th_test1.temperature',
-    '00:11:22:33:44:55:66:DC' : 'th_test2.temperature',
-    '00:11:22:33:44:55:66:A5' : 'sensor0.temperature',
-    '00:11:22:33:44:55:66:7D' : 'wall_router0.temperature',
+    '00:11:22:33:44:55:66:22' : 'office.temperature',
+    '00:11:22:33:44:55:66:DC' : 'living_room.temperature',
+    '00:11:22:33:44:55:66:A5' : 'basement.temperature',
 }
 
 HUMID_SENSOR_NODE_MAP = {
-    '00:11:22:33:44:55:66:22': 'th_test1.humidity',
-    '00:11:22:33:44:55:66:DC': 'th_test2.humidity',
+    '00:11:22:33:44:55:66:22': 'office.humidity',
+    '00:11:22:33:44:55:66:DC': 'living_room.humidity',
 }
 
 def identity_map(row):
