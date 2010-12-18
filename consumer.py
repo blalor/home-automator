@@ -1,7 +1,7 @@
 #!/usr/bin/env python2.6
 # -*- coding: utf-8 -*-
 
-import sys
+import sys,os
 import socket
 
 import struct
@@ -145,7 +145,11 @@ class DatabaseConsumer(BaseConsumer):
 
 
 if __name__ == '__main__':
-    handler = logging.handlers.RotatingFileHandler('logs/consumer.log',
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    
+    daemonizer.createDaemon()
+    
+    handler = logging.handlers.RotatingFileHandler(basedir + '/logs/consumer.log',
                                                    maxBytes=(5 * 1024 * 1024),
                                                    backupCount=5)
     
@@ -153,8 +157,6 @@ if __name__ == '__main__':
     
     logging.getLogger().addHandler(handler)
     logging.getLogger().setLevel(logging.DEBUG)
-    
-    daemonizer.createDaemon()
     
     try:
         BaseConsumer().process_forever()

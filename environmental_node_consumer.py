@@ -76,7 +76,7 @@ def main():
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    c = EnvironmentalNodeConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:dc'])
+    c = EnvironmentalNodeConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:dc', '00:11:22:33:44:55:66:22'])
     
     try:
         c.process_forever()
