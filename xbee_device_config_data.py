@@ -26,10 +26,12 @@ CONFIG_DATA = {
     '00:11:22:33:44:55:66:22' : {
         'NI' : 'Office T/H',
         'BD' : '\x04',
+        'D5' : '\x04', # disable associated LED; force low
     },
     '00:11:22:33:44:55:66:dc' : {
         'NI' : 'Living Room T/H',
         'BD' : '\x04',
+        'D5' : '\x04', # disable associated LED; force low
     },
     '00:11:22:33:44:55:66:1d' : {
         ## temp/humidity 3
