@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.6
 # encoding: utf-8
 """
 xbee_lt_sensor.py
