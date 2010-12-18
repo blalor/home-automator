@@ -14,6 +14,7 @@ import Queue
 
 import consumer
 import SimpleXMLRPCServer
+import random
 
 class FurnaceConsumer(consumer.DatabaseConsumer):
     data_re = re.compile(r'''^([ZT])=(\d+)$''')
@@ -28,7 +29,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
         self.buf = ''
         self.found_start = False
         self.sample_record = {}
-        self.frame_id = '\x01'
+        self.frame_id = chr(((random.randint(1, 255)) % 255) + 1)
         
         # queue for packets that aren't explicitly handled in handle_packet,
         # so that __send_data can get to them.
