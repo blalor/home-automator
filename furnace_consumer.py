@@ -137,7 +137,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                         success = True
                         self._logger.debug("sent data with %d retries", ord(frame['retries']))
                     else:
-                        self._logger.error("send failed after %d retries with status 0x%2X", ord(frame['retries']), ord(frame['status']))
+                        self._logger.error("send failed after %d retries with status 0x%2X", ord(frame['retries']), ord(frame['delivery_status']))
                     
                     break
             except Queue.Empty:
