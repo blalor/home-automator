@@ -13,11 +13,11 @@ CONFIG_DATA = {
         'SC' : '\x80',
         'ZS' : '\x00',
     },
-    # '00:11:22:33:44:55:66:4d' : {
-    #     ## furnace timer/monitor
-    #     'NI' : 'Furnace',
-    #     'BD' : '\x04',
-    # },
+    '00:11:22:33:44:55:66:4d' : {
+        ## furnace timer/monitor
+        'NI' : 'Furnace',
+        'BD' : '\x04',
+    },
     '00:11:22:33:44:55:66:0a' : {
         ## power monitor
         'NI' : 'Power',
