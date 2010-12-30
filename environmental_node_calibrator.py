@@ -47,8 +47,8 @@ class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):
         
         if f_addr in ('00:11:22:33:44:55:66:dc', '00:11:22:33:44:55:66:22', '00:11:22:33:44:55:66:1d'):
             if frame['id'] != 'zb_rx':
-                self._logger.error("unhandled frame id %s", frame['id'])
-                return
+                self._logger.debug("unhandled frame id %s", frame['id'])
+                return False
             
             # {'id': 'zb_rx',
             #  'options': '\x01',
@@ -80,12 +80,12 @@ class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):
         elif f_addr in ('00:11:22:33:44:55:66:7d', '00:11:22:33:44:55:66:a5'):
             # wall router or lt sensor
             if frame['id'] != 'zb_rx_io_data':
-                self._logger.error("unhandled frame id %s", frame['id'])
-                return
+                self._logger.debug("unhandled frame id %s", frame['id'])
+                return False
             
             if 'samples' not in frame:
                 self._logger.error("no samples in frame!")
-                return
+                return True
             
             samples = frame['samples'][0]
             
@@ -106,7 +106,7 @@ class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):
             # the breadboarded XBee
             
             if frame['id'] != 'zb_rx':
-                self._logger.error("unhandled frame id %s", frame['id'])
+                self._logger.debug("unhandled frame id %s", frame['id'])
                 return
             
             with self.__buffer_lock:
@@ -116,7 +116,7 @@ class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):
                     self._logger.error("found end with no start; flushing buffer")
                     self._logger.debug("buffer:\n%s", self.__buffer)
                     self.__buffer = ''
-                    return
+                    return True
                 
                 s_ind = self.__buffer.find(self.START_MARKER) + len(self.START_MARKER)
                 e_ind = self.__buffer.find(self.END_MARKER)
@@ -136,7 +136,7 @@ class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):
                         except:
                             self._logger.error("unable to parse line %s", str(line), exc_info = True)
                             self.__buffer = ''
-                            return
+                            return True
                         
                         # period = None
                         # measured_capacitance = None
@@ -170,7 +170,8 @@ class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):
         else:
             self._logger.debug("no records in packet from %s", f_addr)
         
-        
+        return True
+    
     # }}}
 
 

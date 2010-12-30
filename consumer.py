@@ -12,21 +12,30 @@ import datetime
 import logging
 import logging.handlers
 import daemonizer
+import Queue
+import random
 
 class Disconnected(Exception):
     pass
 
 
+class InvalidDestination(Exception):
+    pass
+
+
 class BaseConsumer(object):
-    __frame_id = '\x01'
-    
     # {{{ __init__
     def __init__(self, xbee_addresses = [], socket_dest = ('localhost', 9999)):
         self._logger = logging.getLogger(self.__class__.__name__)
         
-        self.xbee_addresses = [self._parse_addr(xba) for xba in xbee_addresses]
-        
+        self.__frame_id = chr(((random.randint(1, 255)) % 255) + 1)
         self.__shutdown = False
+        
+        # queue for status frames that aren't explicitly handled in handle_packet,
+        # so that __send_data can get to them.
+        self.__status_msg_queue = Queue.Queue()
+        
+        self.xbee_addresses = [self._parse_addr(xba) for xba in xbee_addresses]
         
         # self.__socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -38,6 +47,7 @@ class BaseConsumer(object):
         self._logger.info("connected to %s", socket_dest)
         
         self.xbee = XBeeProxy.XBeeProxy(self.__socket)
+    
     # }}}
     
     # {{{ _parse_addr
@@ -71,9 +81,44 @@ class BaseConsumer(object):
     
     # {{{ next_frame_id
     def next_frame_id(self):
-        self.__frame_id = chr(ord(self.__frame_id) + 1)
+        # increment frame_id but constrain to 1..255.  Seems to go
+        # 2,4,6,…254,1,3,5…255. Whatever.
+        self.__frame_id = chr(((ord(self.__frame_id) + 1) % 255) + 1)
         
         return self.get_frame_id()
+    
+    # }}}
+    
+    # {{{ _send_data
+    def _send_data(self, dest, data):
+        if dest not in self.xbee_addresses:
+            raise InvalidDestination("destination address %s is not configured for this consumer" % self._format_addr(dest))
+        
+        success = False
+        
+        frame_id = self.next_frame_id()
+        
+        self.xbee.zb_tx_request(frame_id = frame_id, dest_addr_long = dest, data = data)
+        
+        while True:
+            try:
+                frame = self.__status_msg_queue.get(True, 1)
+                # frame is guaranteed to have id == zb_tx_status
+                
+                # print frame
+                if (frame['frame_id'] == frame_id):
+                    if frame['delivery_status'] == '\x00':
+                        # success!
+                        success = True
+                        self._logger.debug("sent data with %d retries", ord(frame['retries']))
+                    else:
+                        self._logger.error("send failed after %d retries with status 0x%2X", ord(frame['retries']), ord(frame['delivery_status']))
+                    
+                    break
+            except Queue.Empty:
+                pass
+            
+        return success
     
     # }}}
     
@@ -102,7 +147,10 @@ class BaseConsumer(object):
                         _do_process = False
                 
                 if _do_process:
-                    self.handle_packet(frame)
+                    if not self.handle_packet(frame):
+                        if (frame['id'] == 'zb_tx_status'):
+                            self.__status_msg_queue.put(frame)
+                        
                 else:
                     # no match on address; filtered.
                     pass
@@ -115,6 +163,7 @@ class BaseConsumer(object):
     def handle_packet(self, packet):
         ## for testing only; subclasses should override
         self._logger.debug(unicode(str(packet), errors='replace'))
+        return True
     # }}}
     
     # {{{ now
@@ -126,7 +175,7 @@ class BaseConsumer(object):
 
 class DatabaseConsumer(BaseConsumer):
     # {{{ __init__
-    def __init__(self, db_name, xbee_addresses = [], socket_dest = ('localhost', 9999)):
+    def __init__(self, db_name, xbee_addresses = [], socket_dest = ('tonidoplug', 9999)):
         import sqlite3
         
         self.dbc = sqlite3.connect(db_name,

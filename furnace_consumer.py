@@ -10,7 +10,6 @@ import re
 
 import signal
 import threading
-import Queue
 
 import consumer
 import SimpleXMLRPCServer
@@ -23,17 +22,12 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     def __init__(self, db_name, xbee_address = []):
         consumer.DatabaseConsumer.__init__(self, db_name, xbee_addresses = [xbee_address])
         
-        ## only supporting a single address
+        ## only supporting a single address; __init__ parses addresses
         self.xbee_address = self.xbee_addresses[0]
         
         self.buf = ''
         self.found_start = False
         self.sample_record = {}
-        self.frame_id = chr(((random.randint(1, 255)) % 255) + 1)
-        
-        # queue for packets that aren't explicitly handled in handle_packet,
-        # so that __send_data can get to them.
-        self.extra_messages_queue = Queue.Queue()
         
     # }}}
     
@@ -45,12 +39,9 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
         #  'source_addr': '\xda\xe0',
         #  'source_addr_long': '\x00\x13\xa2\x00@2\xdc\xdc'}
         
-        # print frame
-        
         if frame['id'] != 'zb_rx':
-            self._logger.error("unhandled frame id %s", frame['id'])
-            self.extra_messages_queue.put(frame)
-            return
+            self._logger.debug("unhandled frame id %s", frame['id'])
+            return False
         
         now = self.now()
         
@@ -110,54 +101,22 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                 sample_value = int(sample_value)
                 
                 self.sample_record[sample_type] = sample_value
-                
-    
-    # }}}
-    
-    # {{{ __send_data
-    def __send_data(self, data):
-        success = False
         
-        # increment frame_id but constrain to 1..255.  Seems to go
-        # 2,4,6,…254,1,3,5…255. Whatever.
-        self.frame_id = chr(((ord(self.frame_id) + 1) % 255) + 1)
-        
-        self.xbee.zb_tx_request(frame_id = self.frame_id, dest_addr_long = self.xbee_address, data = data)
-        
-        while True:
-            try:
-                frame = self.extra_messages_queue.get(True, 1)
-                
-                # print frame
-                if (frame['id'] == 'zb_tx_status') and \
-                   (frame['frame_id'] == self.frame_id):
-                    
-                    if frame['delivery_status'] == '\x00':
-                        # success!
-                        success = True
-                        self._logger.debug("sent data with %d retries", ord(frame['retries']))
-                    else:
-                        self._logger.error("send failed after %d retries with status 0x%2X", ord(frame['retries']), ord(frame['delivery_status']))
-                    
-                    break
-            except Queue.Empty:
-                pass
-            
-        return success
+        return True
     
     # }}}
     
     # {{{ start_timer
     def start_timer(self):
         self._logger.info("starting timer")
-        return self.__send_data('S')
+        return self._send_data(self.xbee_address, 'S')
     
     # }}}
     
     # {{{ cancel_timer
     def cancel_timer(self):
         self._logger.info("cancelling timer")
-        return self.__send_data('C')
+        return self._send_data(self.xbee_address, 'C')
     
     # }}}
     
