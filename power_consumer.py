@@ -20,8 +20,8 @@ class PowerConsumer(consumer.DatabaseConsumer):
         now = self.now()
         
         if frame['id'] != 'zb_rx':
-            self._logger.error("unhandled frame id %s", frame['id'])
-            return
+            self._logger.debug("unhandled frame id %s", frame['id'])
+            return False
         
         # #853:0#
         # readings given in amps * 100
@@ -45,6 +45,8 @@ class PowerConsumer(consumer.DatabaseConsumer):
             
         else:
             self._logger.error("bad data: %s", unicode(data, errors = 'replace'))
+        
+        return True
     
     # }}}
 

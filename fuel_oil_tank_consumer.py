@@ -21,8 +21,8 @@ class FuelOilTankConsumer(consumer.DatabaseConsumer):
         now = self.now()
         
         if frame['id'] != 'zb_rx':
-            self._logger.error("unhandled frame id %s", frame['id'])
-            return
+            self._logger.debug("unhandled frame id %s", frame['id'])
+            return False
         
         # remove trailing whitespace
         data = frame['rf_data'].strip()
@@ -43,6 +43,8 @@ class FuelOilTankConsumer(consumer.DatabaseConsumer):
             
         else:
             self._logger.error("bad data: %s", unicode(data, errors = 'replace'))
+        
+        return True
     
     # }}}
 

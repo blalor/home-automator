@@ -26,12 +26,12 @@ class LightTempConsumer(consumer.DatabaseConsumer):
         now = self.now()
         
         if frame['id'] != 'zb_rx_io_data':
-            self._logger.error("unhandled frame id %s", frame['id'])
-            return
+            self._logger.debug("unhandled frame id %s", frame['id'])
+            return False
         
         if 'samples' not in frame:
             self._logger.error("no samples in frame!")
-            return
+            return True
         
         formatted_addr = self._format_addr(frame['source_addr_long'])
         
@@ -83,6 +83,8 @@ class LightTempConsumer(consumer.DatabaseConsumer):
                 )
         except:
             self._logger.error("unable to insert record into database", exc_info = True)
+        
+        return True
     
     # }}}
 
