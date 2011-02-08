@@ -49,7 +49,7 @@ TEMP_SENSOR_NODE_MAP = {
     '00:11:22:33:44:55:66:22' : 'office.temperature',
     '00:11:22:33:44:55:66:DC' : 'living_room.temperature',
     '00:11:22:33:44:55:66:A5' : 'basement.temperature',
-    '00:11:22:33:44:55:66:7D' : 'garage.temperature',
+    '00:11:22:33:44:55:66:7D' : 'front_porch.temperature',
 }
 
 HUMID_SENSOR_NODE_MAP = {
