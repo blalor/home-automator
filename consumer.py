@@ -146,6 +146,7 @@ class BaseConsumer(object):
                     if (src_addr != None) and (src_addr not in self.xbee_addresses):
                         _do_process = False
                 
+                # @todo fix filtering of status frames; looks like they're stored for every consumer
                 if _do_process:
                     if not self.handle_packet(frame):
                         if (frame['id'] == 'zb_tx_status'):
