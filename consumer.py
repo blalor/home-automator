@@ -176,7 +176,7 @@ class BaseConsumer(object):
 
 class DatabaseConsumer(BaseConsumer):
     # {{{ __init__
-    def __init__(self, db_name, xbee_addresses = [], socket_dest = ('tonidoplug', 9999)):
+    def __init__(self, db_name, xbee_addresses = [], socket_dest = ('localhost', 9999)):
         import sqlite3
         
         self.dbc = sqlite3.connect(db_name,
