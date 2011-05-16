@@ -35,6 +35,10 @@ class BaseConsumer(object):
         # so that __send_data can get to them.
         self.__status_msg_queue = Queue.Queue()
         
+        # queue for remote_at_response frames that aren't explicitly handled in
+        # handle_packet, so that _send_remote_at can get to them.
+        self.__remote_at_msg_queue = Queue.Queue()
+        
         self.xbee_addresses = [self._parse_addr(xba) for xba in xbee_addresses]
         
         # self.__socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -87,6 +91,61 @@ class BaseConsumer(object):
         
         return self.get_frame_id()
     
+    # }}}
+    
+    # {{{ _send_remote_at
+    # "remote_at":
+    #     [{'name':'id',              'len':1,        'default':'\x17'},
+    #      {'name':'frame_id',        'len':1,        'default':'\x00'},
+    #      # dest_addr_long is 8 bytes (64 bits), so use an unsigned long long
+    #      {'name':'dest_addr_long',  'len':8,        'default':struct.pack('>Q', 0)},
+    #      {'name':'dest_addr',       'len':2,        'default':'\xFF\xFE'},
+    #      {'name':'options',         'len':1,        'default':'\x02'},
+    #      {'name':'command',         'len':2,        'default':None},
+    #      {'name':'parameter',       'len':None,     'default':None}],
+    def _send_remote_at(self, dest, command, param_val = None):
+        if dest not in self.xbee_addresses:
+            raise InvalidDestination("destination address %s is not configured for this consumer" % self._format_addr(dest))
+        
+        success = False
+        
+        frame_id = self.next_frame_id()
+        
+        self.xbee.remote_at(frame_id = frame_id,
+                            dest_addr_long = dest,
+                            command = command,
+                            parameter = param_val)
+        
+        while True:
+            try:
+                frame = self.__remote_at_msg_queue.get(True, 1)
+                # frame is guaranteed to have id == remote_at_response
+                self._logger.debug("remote_at_response: " + unicode(str(frame), errors='replace'))
+                
+                if (frame['frame_id'] == frame_id):
+                    if frame['status'] == '\x00':
+                        # success!
+                        success = True
+                        self._logger.debug("successfully sent remote AT command")
+                    elif frame['status'] == '\x01':
+                        # error
+                        self._logger.error("unspecified error sending remote AT command")
+                    elif frame['status'] == '\x02':
+                        # invalid command
+                        self._logger.error("invalid command sending remote AT command")
+                    elif frame['status'] == '\x03':
+                        # invalid parameter
+                        self._logger.error("invalid parameter sending remote AT command")
+                    elif frame['status'] == '\x04':
+                        # remote command transmission failed
+                        self._logger.error("remote AT command transmission failed")
+                    
+                    break
+            except Queue.Empty:
+                pass
+        
+        return success
+        
     # }}}
     
     # {{{ _send_data
@@ -149,8 +208,12 @@ class BaseConsumer(object):
                 # @todo fix filtering of status frames; looks like they're stored for every consumer
                 if _do_process:
                     if not self.handle_packet(frame):
+                        # self._logger.debug("unhandled frame: " + unicode(str(frame), errors='replace'))
+                        
                         if (frame['id'] == 'zb_tx_status'):
                             self.__status_msg_queue.put(frame)
+                        elif frame['id'] == 'remote_at_response':
+                            self.__remote_at_msg_queue.put(frame)
                         
                 else:
                     # no match on address; filtered.

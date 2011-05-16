@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## config file for all XBee devices we know about
 
 CONFIG_DATA = {
@@ -38,11 +40,6 @@ CONFIG_DATA = {
         'NI' : 'T/H Test 3',
         'BD' : '\x04',
     },
-    #'00:11:22:33:44:55:66:da' : {
-    #    ## temp/humidity calibrator
-    #    'BD' : '\x04',
-    #    'RO' : '\x03',
-    #},
     '00:11:22:33:44:55:66:cf' : {
         ## fuel oil tank level monitor
         'NI' : 'Fuel Oil Tank',
@@ -105,5 +102,18 @@ CONFIG_DATA = {
 
         # IO sample rate: 60000ms; < 0xFFFF
         'IR' : '\xEA\x60',
+    },
+    '00:11:22:33:44:55:66:1d' : {
+        ## sprinkler relay control board
+        'NI' : 'Sprinkler',
+        
+        # RSS LED enabled for 5 seconds after last packet received
+        'P0' : '\x01',
+        'RP' : '\x32',
+        
+        # DIO0 — sprinkler 1
+        'D0' : '\x04', # digital output, default low
+        # DIO1 — sprinkler 2
+        'D1' : '\x04', # digital output, default low
     },
 }
