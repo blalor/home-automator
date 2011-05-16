@@ -8,12 +8,12 @@
 
 */2  * * * * cd /home/blalor/xbee_dispatcher && ./upload_data.py
 
-00   4 * * * cd /home/blalor/xbee_dispatcher/sprinkler_controller.py activate_sprinkler   1
-20   4 * * * cd /home/blalor/xbee_dispatcher/sprinkler_controller.py deactivate_sprinkler 1
-20   4 * * * cd /home/blalor/xbee_dispatcher/sprinkler_controller.py activate_sprinkler   2
-40   4 * * * cd /home/blalor/xbee_dispatcher/sprinkler_controller.py deactivate_sprinkler 2
+00   4 * * * /home/blalor/xbee_dispatcher/sprinkler_controller.py activate_sprinkler   1
+20   4 * * * /home/blalor/xbee_dispatcher/sprinkler_controller.py deactivate_sprinkler 1
+20   4 * * * /home/blalor/xbee_dispatcher/sprinkler_controller.py activate_sprinkler   2
+40   4 * * * /home/blalor/xbee_dispatcher/sprinkler_controller.py deactivate_sprinkler 2
 
-00  15 * * * cd /home/blalor/xbee_dispatcher/sprinkler_controller.py activate_sprinkler   1
-20  15 * * * cd /home/blalor/xbee_dispatcher/sprinkler_controller.py deactivate_sprinkler 1
-20  15 * * * cd /home/blalor/xbee_dispatcher/sprinkler_controller.py activate_sprinkler   2
-40  15 * * * cd /home/blalor/xbee_dispatcher/sprinkler_controller.py deactivate_sprinkler 2
+00  15 * * * /home/blalor/xbee_dispatcher/sprinkler_controller.py activate_sprinkler   1
+20  15 * * * /home/blalor/xbee_dispatcher/sprinkler_controller.py deactivate_sprinkler 1
+20  15 * * * /home/blalor/xbee_dispatcher/sprinkler_controller.py activate_sprinkler   2
+40  15 * * * /home/blalor/xbee_dispatcher/sprinkler_controller.py deactivate_sprinkler 2
