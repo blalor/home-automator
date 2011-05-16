@@ -113,7 +113,7 @@ class SprinklerConsumer(consumer.BaseConsumer):
 def main():
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # daemonizer.createDaemon()
+    daemonizer.createDaemon()
     
     handler = logging.handlers.RotatingFileHandler(basedir + "/logs/sprinkler.log",
                                                    maxBytes=(5 * 1024 * 1024),

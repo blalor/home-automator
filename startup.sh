@@ -8,3 +8,4 @@ sleep 5
 ./power_consumer.py
 ./xbee_lt_sensor.py
 ./fuel_oil_tank_consumer.py
+./sprinkler_controller.py
