@@ -6,7 +6,7 @@ import daemonizer
 
 import time
 import logging, logging.handlers
-import re
+import struct
 
 import signal
 import threading
@@ -16,7 +16,11 @@ import SimpleXMLRPCServer
 import random
 
 class FurnaceConsumer(consumer.DatabaseConsumer):
-    data_re = re.compile(r'''^([ZT])=(\d+)$''')
+    zone_states = {
+        0 : "unknown",
+        1 : "active",
+        2 : "inactive",
+    }
     
     # {{{ __init__
     def __init__(self, db_name, xbee_address = []):
@@ -31,6 +35,18 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
         
     # }}}
     
+    # {{{ calc_checksum
+    def calc_checksum(self, data):
+        chksum = len(data)
+
+        for x in data:
+            chksum += ord(x)
+
+        chksum = (0x100 - (chksum & 0xFF))
+
+        return chksum
+    # }}}
+    
     # {{{ handle_packet
     def handle_packet(self, frame):
         # {'id': 'zb_rx',
@@ -38,69 +54,45 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
         #  'rf_data': 'T: 770.42 Cm: 375.14 RH:  42.88 Vcc: 3332 tempC:  19.04 tempF:  66.27\r\n',
         #  'source_addr': '\xda\xe0',
         #  'source_addr_long': '\x00\x13\xa2\x00@2\xdc\xdc'}
-        
         if frame['id'] != 'zb_rx':
             self._logger.debug("unhandled frame id %s", frame['id'])
             return False
         
         now = self.now()
         
-        ## convert the data to chars and append to buffer
-        self.buf += frame['rf_data']
+        data = frame['rf_data']
         
-        ## process each line found in the buffer
-        while self.buf.count('\n') > 0:
-            eol_ind = self.buf.index('\n')
-            line = self.buf[:eol_ind + 1].strip()
+        if data.startswith('\xff\x55'):
+            data_len = ord(data[2])
             
-            ## strip off the line we've just found
-            self.buf = self.buf[eol_ind + 1:]
-            
-            if line == "<begin>":
-                if self.found_start:
-                    self._logger.error("found <begin> without <end>; discarding collected data")
+            if self.calc_checksum(data[3:-1]) == ord(data[-1]):
+                sample = struct.unpack("<BBBH?HB", data)
+                zone_states = {
+                    0 : "unknown",
+                    1 : "active",
+                    2 : "inactive",
+                }
                 
-                self.found_start = True
+                self._logger.debug(
+                    "zone %s, powered: %s, time remaining: %d" % (zone_states[sample[3]], str(sample[4]), sample[5])
+                )
                 
-                # default to unknown values
-                self.sample_record['Z'] = None
-                self.sample_record['T'] = None
-            
-            elif line == "<end>":
-                # finalize
-                if not self.found_start:
-                    self._logger.error("found <end> without <begin>; discarding collected data")
-                    
-                else:
-                    for k in self.sample_record.keys():
-                        if self.sample_record[k] == None:
-                            self._logger.warn("missing value for %s", k)
-                            
-                    try:
-                        self.dbc.execute(
-                            """
-                            insert into furnace (ts_utc, zone_active)
-                            values (?, ?)
-                            """,
-                            (
-                                time.mktime(now.timetuple()),
-                                self.sample_record['Z']
-                            )
-                        )
-                    except:
-                        self._logger.error("unable to insert record into database", exc_info = True)
-                    
-                self.found_start = False
+                # try:
+                #     self.dbc.execute(
+                #         """
+                #         insert into furnace (ts_utc, zone_active)
+                #         values (?, ?)
+                #         """,
+                #         (
+                #             time.mktime(now.timetuple()),
+                #             self.sample_record['Z']
+                #         )
+                #     )
+                # except:
+                #     self._logger.error("unable to insert record into database", exc_info = True)
+                
             else:
-                match = self.data_re.match(line)
-                if not match:
-                    self._logger.error("cannot match %s", line)
-                    continue
-                    
-                sample_type, sample_value = match.groups()
-                sample_value = int(sample_value)
-                
-                self.sample_record[sample_type] = sample_value
+                self._logger.warn("bad checksum")
         
         return True
     
@@ -109,14 +101,30 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     # {{{ start_timer
     def start_timer(self):
         self._logger.info("starting timer")
-        return self._send_data(self.xbee_address, 'S')
+        
+        payload = struct.pack("<cH", 'S', 120)
+        msg = '\xff\x55%s%s%s' % (
+            struct.pack('<B', len(payload)),
+            payload,
+            struct.pack('<B', self.calc_checksum(payload))
+        )
+        
+        return self._send_data(self.xbee_address, msg)
     
     # }}}
     
     # {{{ cancel_timer
     def cancel_timer(self):
         self._logger.info("cancelling timer")
-        return self._send_data(self.xbee_address, 'C')
+
+        payload = struct.pack("<c", 'C')
+        msg = '\xff\x55%s%s%s' % (
+            struct.pack('<B', len(payload)),
+            payload,
+            struct.pack('<B', self.calc_checksum(payload))
+        )
+
+        return self._send_data(self.xbee_address, msg)
     
     # }}}
     
