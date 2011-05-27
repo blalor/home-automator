@@ -99,10 +99,10 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     # }}}
     
     # {{{ start_timer
-    def start_timer(self):
-        self._logger.info("starting timer")
+    def start_timer(self, duration = 420):
+        self._logger.info("starting timer; duration %d", duration)
         
-        payload = struct.pack("<cH", 'S', 120)
+        payload = struct.pack("<cH", 'S', duration)
         msg = '\xff\x55%s%s%s' % (
             struct.pack('<B', len(payload)),
             payload,
