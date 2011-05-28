@@ -102,6 +102,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     # {{{ start_timer
     def start_timer(self, duration = 420):
         self._logger.info("starting timer; duration %d", duration)
+        self.timer_remaining = duration
         
         payload = struct.pack("<cH", 'S', duration)
         msg = '\xff\x55%s%s%s' % (
@@ -117,14 +118,15 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     # {{{ cancel_timer
     def cancel_timer(self):
         self._logger.info("cancelling timer")
-
+        self.timer_remaining = 0
+        
         payload = struct.pack("<c", 'C')
         msg = '\xff\x55%s%s%s' % (
             struct.pack('<B', len(payload)),
             payload,
             struct.pack('<B', self.calc_checksum(payload))
         )
-
+        
         return self._send_data(self.xbee_address, msg)
     
     # }}}
