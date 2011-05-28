@@ -46,11 +46,6 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     
     # {{{ handle_packet
     def handle_packet(self, frame):
-        # {'id': 'zb_rx',
-        #  'options': '\x01',
-        #  'rf_data': 'T: 770.42 Cm: 375.14 RH:  42.88 Vcc: 3332 tempC:  19.04 tempF:  66.27\r\n',
-        #  'source_addr': '\xda\xe0',
-        #  'source_addr_long': '\x00\x13\xa2\x00@2\xdc\xdc'}
         if frame['id'] != 'zb_rx':
             self._logger.debug("unhandled frame id %s", frame['id'])
             return False
@@ -77,19 +72,25 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
                     )
                 )
                 
-                # try:
-                #     self.dbc.execute(
-                #         """
-                #         insert into furnace (ts_utc, zone_active)
-                #         values (?, ?)
-                #         """,
-                #         (
-                #             time.mktime(now.timetuple()),
-                #             self.sample_record['Z']
-                #         )
-                #     )
-                # except:
-                #     self._logger.error("unable to insert record into database", exc_info = True)
+                if zone_state != 'unknown':
+                    if zone_state == 'active':
+                        db_zone_val = 1
+                    else:
+                        db_zone_val = 0
+                    
+                    try:
+                        self.dbc.execute(
+                            """
+                            insert into furnace (ts_utc, zone_active)
+                            values (?, ?)
+                            """,
+                            (
+                                time.mktime(now.timetuple()),
+                                db_zone_val
+                            )
+                        )
+                    except:
+                        self._logger.error("unable to insert record into database", exc_info = True)
                 
             else:
                 self._logger.warn("bad checksum")
