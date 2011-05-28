@@ -29,10 +29,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
         ## only supporting a single address; __init__ parses addresses
         self.xbee_address = self.xbee_addresses[0]
         
-        self.buf = ''
-        self.found_start = False
-        self.sample_record = {}
-        
+        self.timer_remaining = -1
     # }}}
     
     # {{{ calc_checksum
@@ -67,14 +64,17 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
             
             if self.calc_checksum(data[3:-1]) == ord(data[-1]):
                 sample = struct.unpack("<BBBH?HB", data)
-                zone_states = {
-                    0 : "unknown",
-                    1 : "active",
-                    2 : "inactive",
-                }
+                
+                zone_state = self.zone_states[sample[3]]
+                powered = sample[4]
+                self.timer_remaining = sample[5]
                 
                 self._logger.debug(
-                    "zone %s, powered: %s, time remaining: %d" % (zone_states[sample[3]], str(sample[4]), sample[5])
+                    "zone %s, powered: %s, time remaining: %d" % (
+                        zone_state,
+                        str(powered),
+                        self.timer_remaining
+                    )
                 )
                 
                 # try:
@@ -130,7 +130,7 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     
     # {{{ get_time_remaining
     def get_time_remaining(self):
-        return self.sample_record['T']
+        return self.timer_remaining
     
     # }}}
 
