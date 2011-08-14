@@ -1,6 +1,8 @@
 #!/usr/bin/env python2.6
 # -*- coding: utf-8 -*-
 
+# proxies data from the power monitor to the "volt-o-meter" gauge.
+
 import sys, os
 import consumer
 import time
@@ -33,6 +35,7 @@ def build_packet(name, val):
 
 
 class VoltometerDriver(consumer.BaseConsumer):
+    # the boost converter is only able to supply 32 volts (isn't it actually 34??)
     VOLT_METER_MAX = 32.0
     
     # max observed value from historical data is 92.33; let make the scale a 
@@ -50,6 +53,7 @@ class VoltometerDriver(consumer.BaseConsumer):
     
     
     # {{{ handle_packet
+    # parses a packet from the power meter and feeds it to the volt meter
     def handle_packet(self, frame):
         # {'id': 'zb_rx',
         #  'options': '\x01',
@@ -87,6 +91,9 @@ class VoltometerDriver(consumer.BaseConsumer):
                 clamp_tot, volt_meter_val, pwm_val
             )
             
+            # kludge to work around bad design in consumer.
+            # don't wait for an ack; causing a deadlock while waiting for a 
+            # response that won't arrive because we're not consuming responses. :-)
             self._send_data(self.voltometer_addr, build_packet('M', pwm_val), wait_for_ack = False)
             
         else:
@@ -97,12 +104,14 @@ class VoltometerDriver(consumer.BaseConsumer):
     # }}}
     
     # {{{ set_light
+    # sets the PWM value for the LED output
     def set_light(self, light_val):
         return self._send_data(self.voltometer_addr, build_packet('L', light_val))
     
     # }}}
     
     # {{{ set_boost
+    # sets the PWM value for the boost converter
     def set_boost(self, boost_val):
         return self._send_data(self.voltometer_addr, build_packet('B', boost_val))
     
