@@ -149,7 +149,10 @@ class BaseConsumer(object):
     # }}}
     
     # {{{ _send_data
-    def _send_data(self, dest, data):
+    # wait_for_ack is a kludge.  when the general event-driven process and the 
+    # _send_data are called in the same thread, the __status_msg_queue is 
+    # never populated.  sending requires its own thread, I think.
+    def _send_data(self, dest, data, wait_for_ack = True):
         if dest not in self.xbee_addresses:
             raise InvalidDestination("destination address %s is not configured for this consumer" % self._format_addr(dest))
         
@@ -159,7 +162,8 @@ class BaseConsumer(object):
         
         self.xbee.zb_tx_request(frame_id = frame_id, dest_addr_long = dest, data = data)
         
-        while True:
+        ack_received = False
+        while wait_for_ack and (not ack_received):
             try:
                 frame = self.__status_msg_queue.get(True, 1)
                 # frame is guaranteed to have id == zb_tx_status
@@ -173,8 +177,9 @@ class BaseConsumer(object):
                     else:
                         self._logger.error("send failed after %d retries with status 0x%2X", ord(frame['retries']), ord(frame['delivery_status']))
                     
-                    break
+                    ack_received = True
             except Queue.Empty:
+                # self._logger.debug("status message queue is empty")
                 pass
             
         return success
@@ -210,7 +215,7 @@ class BaseConsumer(object):
                     if not self.handle_packet(frame):
                         # self._logger.debug("unhandled frame: " + unicode(str(frame), errors='replace'))
                         
-                        if (frame['id'] == 'zb_tx_status'):
+                        if frame['id'] == 'zb_tx_status':
                             self.__status_msg_queue.put(frame)
                         elif frame['id'] == 'remote_at_response':
                             self.__remote_at_msg_queue.put(frame)
