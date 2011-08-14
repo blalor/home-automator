@@ -116,4 +116,11 @@ CONFIG_DATA = {
         # DIO1 — sprinkler 2
         'D1' : '\x04', # digital output, default low
     },
+    '00:11:22:33:44:55:66:e2' : {
+        ## volt-o-meter
+        'NI' : 'Volt-O-Meter',
+        'BD' : '\x03', # 9600
+        'D5' : '\x00', # disable associated LED
+        'P0' : '\x00', # disable RSSI LED
+    },
 }
