@@ -13,7 +13,6 @@ import threading
 
 import consumer
 import SimpleXMLRPCServer
-import random
 
 class FurnaceConsumer(consumer.DatabaseConsumer):
     zone_states = {
