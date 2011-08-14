@@ -112,7 +112,7 @@ class VoltometerDriver(consumer.BaseConsumer):
 def main():
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # daemonizer.createDaemon()
+    daemonizer.createDaemon()
     
     handler = logging.handlers.RotatingFileHandler(basedir + "/logs/voltometer.log",
                                                    maxBytes=(5 * 1024 * 1024),
@@ -121,7 +121,7 @@ def main():
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
     
     logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.INFO)
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
