@@ -80,7 +80,9 @@ class VoltometerDriver(consumer.BaseConsumer):
             
             # scale volt_meter_val to nearest integer PWM value (0-255), apply correction factor
             pwm_val_raw = (volt_meter_val*255)/self.VOLT_METER_MAX
-            pwm_val = int(round(pwm_val_raw - (pwm_val_raw * 0.11)))
+            
+            # constrain value to 255
+            pwm_val = min(int(round(pwm_val_raw - (pwm_val_raw * 0.11))), 255)
             
             self._logger.debug(
                 'clamp: %.2f, volt meter: %.2f, pwm: %d',
