@@ -190,9 +190,9 @@ def main():
                 # uploader
                 tmpf.seek(0)
                 
-                ## now, upload the data
+                ## now, upload the data; 90 second timeout
                 log.debug("uploading")
-                resp = urlopener.open(upload_url, {'pickle_file': tmpf})
+                resp = urlopener.open(upload_url, {'pickle_file': tmpf}, 90)
                 
                 if resp.code == 200:
                     # upload was successful
