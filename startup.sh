@@ -9,3 +9,4 @@ sleep 5
 ./xbee_lt_sensor.py
 ./fuel_oil_tank_consumer.py
 ./sprinkler_driver.py
+./voltometer_driver.py
