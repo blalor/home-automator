@@ -141,6 +141,8 @@ def main():
         xrs_thread.start()
         
         sc.process_forever()
+    except:
+        logging.error("unhandled exception", exc_info=True)
     finally:
         sc.shutdown()
         xrs.shutdown()

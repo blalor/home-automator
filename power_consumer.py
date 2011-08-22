@@ -71,6 +71,8 @@ def main():
     
     try:
         pc.process_forever()
+    except:
+        logging.error("unhandled exception", exc_info=True)
     finally:
         pc.shutdown()
         logging.shutdown()

@@ -110,6 +110,8 @@ def main():
     
     try:
         sc.process_forever()
+    except:
+        logging.error("unhandled exception", exc_info=True)
     finally:
         sc.shutdown()
         logging.shutdown()

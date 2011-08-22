@@ -169,6 +169,8 @@ def main():
         xrs_thread.start()
         
         fc.process_forever()
+    except:
+        logging.error("unhandled exception", exc_info=True)
     finally:
         fc.shutdown()
         xrs.shutdown()

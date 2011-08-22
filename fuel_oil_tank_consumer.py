@@ -69,6 +69,8 @@ def main():
     
     try:
         fc.process_forever()
+    except:
+        logging.error("unhandled exception", exc_info=True)
     finally:
         fc.shutdown()
         logging.shutdown()
