@@ -122,7 +122,7 @@ def main():
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
     
     logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.INFO)
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
@@ -141,6 +141,8 @@ def main():
         xrs_thread.start()
         
         sc.process_forever()
+    except:
+        logging.error("unhandled exception", exc_info=True)
     finally:
         sc.shutdown()
         xrs.shutdown()

@@ -224,6 +224,8 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         logging.info("Interrupt caught, shutting down")
+    except:
+        logging.error("unhandled exception", exc_info=True)
     finally:
         logging.debug("cleaning up")
         server.server_close()
