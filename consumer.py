@@ -223,6 +223,10 @@ class BaseConsumer(object):
                 else:
                     # no match on address; filtered.
                     pass
+                
+            except XBeeProxy.PeerDiedError:
+                self._logger.critical("connection to server went away", exc_info = True)
+                self.shutdown()
             except:
                 self._logger.critical("exception handling packet", exc_info = True)
         
