@@ -33,11 +33,11 @@ class BaseConsumer(object):
         
         # queue for status frames that aren't explicitly handled in handle_packet,
         # so that __send_data can get to them.
-        self.__status_msg_queue = Queue.Queue()
+        self.__status_msg_queue = Queue.Queue(maxsize = 100)
         
         # queue for remote_at_response frames that aren't explicitly handled in
         # handle_packet, so that _send_remote_at can get to them.
-        self.__remote_at_msg_queue = Queue.Queue()
+        self.__remote_at_msg_queue = Queue.Queue(maxsize = 100)
         
         self.xbee_addresses = [self._parse_addr(xba) for xba in xbee_addresses]
         
@@ -216,8 +216,18 @@ class BaseConsumer(object):
                         # self._logger.debug("unhandled frame: " + unicode(str(frame), errors='replace'))
                         
                         if frame['id'] == 'zb_tx_status':
+                            # prune queue while full
+                            while self.__status_msg_queue.full():
+                                self._logger.debug("status message queue full; removing item")
+                                self.__status_msg_queue.get()
+                            
                             self.__status_msg_queue.put(frame)
                         elif frame['id'] == 'remote_at_response':
+                            # prune queue while full
+                            while self.__remote_at_msg_queue.full():
+                                self._logger.debug("remote AT message queue full; removing item")
+                                self.__remote_at_msg_queue.get()
+                                
                             self.__remote_at_msg_queue.put(frame)
                         
                 else:
