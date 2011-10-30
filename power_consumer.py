@@ -14,8 +14,8 @@ class PowerConsumer(consumer.DatabaseConsumer):
         # {'id': 'zb_rx',
         #  'options': '\x01',
         #  'rf_data': '#23:71#\r\n',
-        #  'src_addr': '\x18:',
-        #  'src_addr_long': '\x00\x13\xa2\x00@:[\n'}
+        #  'source_addr': '\x18:',
+        #  'source_addr_long': '\x00\x13\xa2\x00@:[\n'}
         
         now = self.now()
         
