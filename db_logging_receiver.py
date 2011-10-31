@@ -24,6 +24,7 @@ class Listener(object):
         'light.*',
         'temperature.*',
         'humidity.*',
+        'oil_tank',
     )
     
     # {{{ __init__
@@ -98,6 +99,13 @@ class Listener(object):
                 time.mktime(frame['timestamp'].timetuple()),
                 frame['node_id'],
                 frame['rel_humid'],
+            )
+        
+        elif method.routing_key == 'oil_tank':
+            query = "insert into oil_tank (ts_utc, height) values (?, ?)"
+            data = (
+                time.mktime(frame['timestamp'].timetuple()),
+                frame['height'],
             )
         
         else:
