@@ -11,17 +11,6 @@ import daemonizer
 import rabbit_consumer as consumer
 
 class LightTempConsumerRabbit(consumer.BaseConsumer):
-    def __init__(self, addrs):
-        bindings = []
-        
-        # only listen for IO frames from the XBee light/temp sensors
-        for addr in addrs:
-            bindings.append("zb_rx_io_data." + addr.lower())
-        
-        
-        super(LightTempConsumerRabbit, self).__init__(bindings)
-    
-    
     # {{{ handle_packet
     def handle_packet(self, xbee_frame):
         # {'_timestamp': datetime.datetime(2011, 10, 30, 16, 5, 18, 223946),
@@ -30,6 +19,10 @@ class LightTempConsumerRabbit(consumer.BaseConsumer):
         #  'samples': [{'adc-1': 17, 'adc-2': 613, 'dio-0': True}],
         #  'source_addr': 'R\xc1',
         #  'source_addr_long': '\x00\x13\xa2\x00@Un}'}
+        
+        if xbee_frame['id'] != 'zb_rx_io_data':
+            self._logger.debug("ignoring frame id %s", xbee_frame['id'])
+            return
         
         if 'samples' not in xbee_frame:
             self._logger.error("no samples in frame!")

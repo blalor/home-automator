@@ -12,9 +12,7 @@ import rabbit_consumer as consumer
 
 class PowerConsumer(consumer.BaseConsumer):
     def __init__(self, addr):
-        super(PowerConsumer, self).__init__((
-            "zb_rx." + addr.lower(),
-        ))
+        super(PowerConsumer, self).__init__((addr,))
     
     
     # {{{ handle_packet
@@ -25,6 +23,10 @@ class PowerConsumer(consumer.BaseConsumer):
         #  'rf_data': '#107:223#\r\n',
         #  'source_addr': '\x054',
         #  'source_addr_long': '\x00\x13\xa2\x00@:[\n'}
+        
+        if xbee_frame['id'] != 'zb_rx':
+            self._logger.debug("ignoring frame id %s", xbee_frame['id'])
+            return
         
         sensor_frame = {
             'timestamp' : xbee_frame['_timestamp'],

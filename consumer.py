@@ -15,6 +15,8 @@ import daemonizer
 import Queue
 import random
 
+import pdb
+
 class Disconnected(Exception):
     pass
 
@@ -25,7 +27,7 @@ class InvalidDestination(Exception):
 
 class BaseConsumer(object):
     # {{{ __init__
-    def __init__(self, xbee_addresses = [], socket_dest = ('localhost', 9999)):
+    def __init__(self, xbee_addresses = [], socket_dest = ('pepe', 9999)):
         self._logger = logging.getLogger(self.__class__.__name__)
         
         self.__frame_id = chr(((random.randint(1, 255)) % 255) + 1)
@@ -237,6 +239,10 @@ class BaseConsumer(object):
             except XBeeProxy.PeerDiedError:
                 self._logger.critical("connection to server went away", exc_info = True)
                 self.shutdown()
+            except KeyboardInterrupt:
+                self._logger.critical("keyboard interrupt")
+                self.shutdown()
+                # pdb.set_trace()
             except:
                 self._logger.critical("exception handling packet", exc_info = True)
         
@@ -258,7 +264,7 @@ class BaseConsumer(object):
 
 class DatabaseConsumer(BaseConsumer):
     # {{{ __init__
-    def __init__(self, db_name, xbee_addresses = [], socket_dest = ('localhost', 9999)):
+    def __init__(self, db_name, xbee_addresses = [], socket_dest = ('pepe', 9999)):
         import sqlite3
         
         self.dbc = sqlite3.connect(db_name,
