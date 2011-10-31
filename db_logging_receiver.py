@@ -23,6 +23,7 @@ class Listener(object):
         'electric_meter',
         'light.*',
         'temperature.*',
+        'humidity.*',
     )
     
     # {{{ __init__
@@ -89,6 +90,14 @@ class Listener(object):
                 time.mktime(frame['timestamp'].timetuple()),
                 frame['node_id'],
                 frame['light'],
+            )
+        
+        elif method.routing_key.startswith('humidity.'):
+            query = "insert into humidity (ts_utc, node_id, rel_humid) values (?, ?, ?)"
+            data = (
+                time.mktime(frame['timestamp'].timetuple()),
+                frame['node_id'],
+                frame['rel_humid'],
             )
         
         else:
