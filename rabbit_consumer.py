@@ -45,23 +45,24 @@ class BaseConsumer(object):
         # channel for working with raw packets
         self._pkt_channel = self._connection.channel()
         
+        self.declare_exchanges(self._pkt_channel)
+        
+        # create new queue exclusively for us (channel is arbitrary)
+        self._queue_name = self._pkt_channel.queue_declare(exclusive = True).method.queue
+        
         # channel for transmitting packets
         self._rpc_channel = self._connection.channel()
         
-        self.declare_exchanges(self._pkt_channel)
-        
-        # create new queue exclusively for us
-        self._queue_name = self._pkt_channel.queue_declare(exclusive = True).method.queue
-        
-        # configure 
+        # configure callback for all packets
         self._pkt_channel.basic_consume(self.__on_receive_packet,
-                                    queue = self._queue_name,
-                                    no_ack = True)
+                                        queue = self._queue_name,
+                                        no_ack = True)
         
+        # bind routing keys to queue
         for addr in self.xbee_addresses:
             self._pkt_channel.queue_bind(exchange = 'raw_xbee_packets',
-                                     queue = self._queue_name,
-                                     routing_key = '*.' + addr.lower())
+                                         queue = self._queue_name,
+                                         routing_key = '*.' + addr.lower())
         
         # queue for status frames that aren't explicitly handled in handle_packet,
         # so that __send_data can get to them.
@@ -73,6 +74,16 @@ class BaseConsumer(object):
         self.__remote_at_msgs = {}
         self.__remote_at_msgs_rlock = threading.RLock()
     
+    # }}}
+    
+    # {{{ serialize
+    def serialize(self, data):
+        return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
+    # }}}
+    
+    # {{{ deserialize
+    def deserialize(self, data):
+        return pickle.loads(data)
     # }}}
     
     # {{{ declare_exchanges
@@ -179,14 +190,25 @@ class BaseConsumer(object):
         success = False
         
         self._logger.debug("sending message")
+        
         corr_id = str(uuid.uuid4())
+        reply_received_event = threading.Event()
+        
+        with self.__status_msgs_rlock:
+            self.__status_msgs[corr_id] = {
+                'event' : reply_received_event,
+                'response' : None,
+            }
+        
+        
         self._rpc_channel.basic_publish(
             exchange = '',
             routing_key = 'xbee_tx',
             properties = pika.BasicProperties(
+                reply_to = self._queue_name,
                 correlation_id = corr_id,
             ),
-            body = pickle.dumps({
+            body = self.serialize({
                 'method' : 'send_data',
                 'dest' : dest,
                 'data' : data,
@@ -194,29 +216,28 @@ class BaseConsumer(object):
         )
         
         self._logger.debug("message sent")
-                                           
-        ack_received = False
-        while not ack_received:
-            with self.__status_msgs_rlock:
-                if corr_id in self.__status_msgs:
-                    ack_received = True
-                    
-                    frame = self.__status_msgs[corr_id]
-                    
-                    # frame is guaranteed to have id == zb_tx_status
-                
-                    # print frame
-                    if frame['delivery_status'] == '\x00':
-                        # success!
-                        success = True
-                        self._logger.debug("sent data with %d retries", ord(frame['retries']))
-                    else:
-                        self._logger.error(
-                            "send failed after %d retries with status 0x%2X",
-                            ord(frame['retries']), ord(frame['delivery_status'])
-                        )
+        
+        # wait 10s for the reply to our call to be received
+        reply_received_event.wait(10)
+        
+        with self.__status_msgs_rlock:
+            frame = self.__status_msgs.pop(corr_id)['response']
             
+        if reply_received_event.is_set() and (frame != None):
+            # frame is guaranteed to have id == zb_tx_status
             
+            if frame['delivery_status'] == '\x00':
+                # success!
+                success = True
+                self._logger.debug("sent data with %d retries", ord(frame['retries']))
+            else:
+                self._logger.error(
+                    "send failed after %d retries with status 0x%2X",
+                    ord(frame['retries']), ord(frame['delivery_status'])
+                )
+        else:
+            self._logger.warn("no reply received from %s for %s", dest, data)
+        
         return success
     
     # }}}
@@ -241,35 +262,39 @@ class BaseConsumer(object):
     # }}}
     
     # {{{ __on_receive_packet
-    def __on_receive_packet(self, ch, method, properties, body):
+    def __on_receive_packet(self, ch, method, props, body):
         self._logger.debug("received packet from exchange '%s' with routing key %s and correlation_id %s",
-                           method.exchange, method.routing_key, properties.correlation_id)
+                           method.exchange, method.routing_key, props.correlation_id)
         
-        frame = pickle.loads(body)
+        frame = self.deserialize(body)
         
-        # handle any replies we've gotten separately from normally-received
-        # frames.  messages received through this callback are guaranteed 
-        # to have a routing_key of the form <frame id>.<address>, where the 
-        # address is one we're subscribed to
+        # we get both standard "raw" frames AND RPC replies in this handler
         
-        if frame['id'] == 'zb_tx_status':
-            with self.__status_msgs_rlock:
-                self.__status_msgs[properties.correlation_id] = frame
-        elif frame['id'] == 'remote_at_response':
-            # prune queue while full
-            while self.__remote_at_msg_queue.full():
-                self._logger.debug("remote AT message queue full; removing item")
-                self.__remote_at_msg_queue.get()
+        # differentiate replies from raw packets
+        if (props.correlation_id != None) and (method.routing_key == self._queue_name):
+            # this is a reply
+            if frame['id'] == 'zb_tx_status':
+                with self.__status_msgs_rlock:
+                    if props.correlation_id in self.__status_msgs:
+                        self.__status_msgs[props.correlation_id]['response'] = frame
+                        self.__status_msgs[props.correlation_id]['event'].set()
+                    else:
+                        self._logger.error("got reply for unknown correlation: %s", frame)
+                
+            elif frame['id'] == 'remote_at_response':
+                pass
             
-            self.__remote_at_msg_queue.put(frame)
         else:
+            # standard raw packet; guaranteed  to have a routing_key of the form
+            # <frame id>.<address>, where the address is one we're subscribed to
             try:
                 self.handle_packet(frame)
             except:
                 self._logger.critical("exception handling packet", exc_info = True)
-        
+            
         
     # }}}
+    
     
     # {{{ handle_packet
     def handle_packet(self, packet):
@@ -285,7 +310,7 @@ class BaseConsumer(object):
         self._pkt_channel.basic_publish(
             exchange = 'sensor_data',
             routing_key = routing_key,
-            body = pickle.dumps(body, pickle.HIGHEST_PROTOCOL)
+            body = self.serialize(body)
         )
     
     # }}}

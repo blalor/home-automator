@@ -24,10 +24,6 @@ class PowerConsumer(consumer.BaseConsumer):
         #  'source_addr': '\x054',
         #  'source_addr_long': '\x00\x13\xa2\x00@:[\n'}
         
-        if xbee_frame['id'] != 'zb_rx':
-            self._logger.debug("ignoring frame id %s", xbee_frame['id'])
-            return
-        
         sensor_frame = {
             'timestamp' : xbee_frame['_timestamp'],
         }

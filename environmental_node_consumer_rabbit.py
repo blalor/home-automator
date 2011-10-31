@@ -35,14 +35,12 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
         #  'source_addr': '\xda\xe0',
         #  'source_addr_long': '\x00\x13\xa2\x00@2\xdc\xdc'}
         
-        if frame['id'] != 'zb_rx':
-            self._logger.debug("ignoring frame id %s", frame['id'])
-            return
-        
         # need to determine if this is regular sample data, or if it's a binary
         # response containing the current calibration data.  I wasn't very smart when
         # I wrote the code for the sensor, so there's binary data mixed in with sample
         # data. Try parsing the sample data first.
+        formatted_addr = self._format_addr(frame['source_addr_long'])
+        
         handled_as_binary = False
         
         if len(frame['rf_data']) > 3:
@@ -55,7 +53,7 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
                 handled_as_binary = True
                 
                 with self.__calibration_data_lock:
-                    self.__calibration_data[frame['source_addr_long']] = {
+                    self.__calibration_data[formatted_addr] = {
                         'capacitanceConvFactor': data[0],
                         'humiditySensitivity': data[1],
                         'temperatureCoefficient': data[2],
@@ -65,7 +63,7 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
                         'temperatureSensorCorrectionOffset': data[6],
                     }
                     
-                    self._logger.debug("found calibration data: " + str(self.__calibration_data[frame['source_addr_long']]))
+                    self._logger.debug("found calibration data: " + str(self.__calibration_data[formatted_addr]))
                 
             except struct.error:
                 pass
@@ -80,8 +78,6 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
             if sdata[0] == 'T:':
                 rel_humid = float(sdata[5])
                 temp_C = float(sdata[9])
-                
-                formatted_addr = self._format_addr(frame['source_addr_long'])
                 
                 sensor_frame = {
                     'timestamp' : frame['_timestamp'],
@@ -107,10 +103,8 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
         for d in body:
             checksum ^= ord(d)
         
-        #print packet_spec
         p = struct.pack(packet_spec, '*', len(body), body, checksum)
         
-        # print [c for c in p], [hex(ord(c)) for c in p]
         return p
     
     # }}}

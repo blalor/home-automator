@@ -23,6 +23,14 @@ import daemonizer
 import cPickle as pickle
 from pprint import pprint
 
+def serialize(data):
+    return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
+
+
+def deserialize(data):
+    return pickle.loads(data)
+
+
 class RabbitBridge(consumer.BaseConsumer):
     # {{{ __init__
     def __init__(self):
@@ -30,6 +38,7 @@ class RabbitBridge(consumer.BaseConsumer):
         
         ## map of correlation IDs, frame IDs, and destinations
         self.__correlations = {}
+        self.__correlation_lock = threading.RLock()
         
         self._connection = pika.BlockingConnection(
             pika.ConnectionParameters(host='pepe')
@@ -40,7 +49,7 @@ class RabbitBridge(consumer.BaseConsumer):
         
         # create the exchange, if necessary
         self._pkt_channel.exchange_declare(exchange = 'raw_xbee_packets',
-                                       type = 'topic')
+                                           type = 'topic')
         
         # channel for receiving transmission packets
         self._rpc_channel = self._connection.channel()
@@ -60,29 +69,27 @@ class RabbitBridge(consumer.BaseConsumer):
     # {{{ on_request
     def handle_xb_tx(self, ch, method, props, body):
         try:
-            req = pickle.loads(body)
+            req = deserialize(body)
         except:
             self._logger.error("unable to load pickle")
             ch.basic_ack(delivery_tag = method.delivery_tag)
             return
         
-        if not hasattr(props, 'correlation_id'):
-            self._logger.error("got message without correlation; dropping")
-            ch.basic_ack(delivery_tag = method.delivery_tag)
-            return
-            
         self._logger.debug(
             "TX method %s for dest %s with correlation ID %s",
             req['method'], req['dest'], props.correlation_id
         )
         
+        
         # maintain relationship of correlation IDs, frame IDs, and destination addresses
         frame_id = self.next_frame_id()
+        response_received_event = threading.Event()
         
-        self.__correlations[frame_id] = {
-            'correlation_id' : props.correlation_id,
-            'dest' : req['dest'],
-        }
+        with self.__correlation_lock:
+            self.__correlations[frame_id] = {
+                'response' : None,
+                'event' : response_received_event,
+            }
         
         if req['method'] == 'send_remote_at':
             # {'method' : 'send_remote_at',
@@ -109,12 +116,30 @@ class RabbitBridge(consumer.BaseConsumer):
         # ack that the message's been handled
         ch.basic_ack(delivery_tag = method.delivery_tag)
         
-        # now let the reply be handled in the main handle_packet loop
+        # wait for response for 10s
+        response_received_event.wait(10)
+        
+        if not response_received_event.is_set():
+            self._logger.warn("no response received for %s", props.correlation_id)
+        
+        # ok, we should now have the result
+        with self.__correlation_lock:
+            resp_frame = self.__correlations.pop(frame_id)['response']
+    
+        ch.basic_publish(
+            exchange = '',
+            routing_key = props.reply_to,
+            properties = pika.BasicProperties(
+                correlation_id = props.correlation_id
+            ),
+            body = serialize(resp_frame)
+        )
+    
+        
     
     # }}}
     
     # {{{ handle_packet
-    # parses a packet from the power meter and feeds it to the volt meter
     def handle_packet(self, frame):
         # {'id': 'zb_rx',
         #  'options': '\x01',
@@ -128,39 +153,36 @@ class RabbitBridge(consumer.BaseConsumer):
         
         correlation_data = None
         frame_addr = 'unknown'
-        props = pika.BasicProperties()
         
         if 'frame_id' in frame:
-            self._logger.debug("found reply of type %s with frame_id %02x", frame['id'], ord(frame['frame_id']))
-            
             # this is a response of some kind
-            if frame['frame_id'] in self.__correlations:
-                correlation_data = self.__correlations[frame['frame_id']]
-                del self.__correlations[frame['frame_id']]
-                
-                frame_addr = correlation_data['dest']
-                props.correlation_id = correlation_data['correlation_id']
-            else:
-                # self._logger.error("got response to a command I didn't send: %s", str(frame))
-                pass
-        
-        elif 'source_addr' in frame:
-            frame_addr = self._format_addr(frame['source_addr'])
+            # self._logger.debug("found reply of type %s with frame_id %02x", frame['id'], ord(frame['frame_id']))
             
-            if 'source_addr_long' in frame:
-                frame_addr = self._format_addr(frame['source_addr_long'])
+            with self.__correlation_lock:
+                if frame['frame_id'] in self.__correlations:
+                    # hand off the frame to the waiting handler
+                    self.__correlations[frame['frame_id']]['response'] = frame
+                    self.__correlations[frame['frame_id']]['event'].set()
+                else:
+                    # self._logger.error("got response to a command I didn't send: %s", str(frame))
+                    pass
+        else:
+            if 'source_addr' in frame:
+                frame_addr = self._format_addr(frame['source_addr'])
+            
+                if 'source_addr_long' in frame:
+                    frame_addr = self._format_addr(frame['source_addr_long'])
         
-        # something like "zb_rx.00:11:22:33:44:55:66:0a"
-        routing_key = '%s.%s' % (frame['id'], frame_addr)
+            # something like "zb_rx.00:11:22:33:44:55:66:0a"
+            routing_key = '%s.%s' % (frame['id'], frame_addr)
         
-        # self._logger.debug("routing_key: %s", routing_key)
+            self._logger.debug("routing_key: %s", routing_key)
         
-        self._pkt_channel.basic_publish(
-            exchange = 'raw_xbee_packets',
-            properties = props,
-            routing_key = routing_key,
-            body = pickle.dumps(frame, pickle.HIGHEST_PROTOCOL)
-        )
+            self._pkt_channel.basic_publish(
+                exchange = 'raw_xbee_packets',
+                routing_key = routing_key,
+                body = serialize(frame)
+            )
         
         return True
     
