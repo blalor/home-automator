@@ -28,7 +28,7 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
     # }}}
     
     # {{{ handle_packet
-    def handle_packet(self, frame):
+    def handle_packet(self, formatted_addr, frame):
         # {'id': 'zb_rx',
         #  'options': '\x01',
         #  'rf_data': 'T: 770.42 Cm: 375.14 RH:  42.88 Vcc: 3332 tempC:  19.04 tempF:  66.27\r\n',
@@ -39,8 +39,6 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
         # response containing the current calibration data.  I wasn't very smart when
         # I wrote the code for the sensor, so there's binary data mixed in with sample
         # data. Try parsing the sample data first.
-        formatted_addr = self._format_addr(frame['source_addr_long'])
-        
         handled_as_binary = False
         
         if len(frame['rf_data']) > 3:

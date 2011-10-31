@@ -267,6 +267,7 @@ class BaseConsumer(object):
                            method.exchange, method.routing_key, props.correlation_id)
         
         frame = self.deserialize(body)
+        formatted_addr = method.routing_key.split('.')[0]
         
         # we get both standard "raw" frames AND RPC replies in this handler
         
@@ -288,7 +289,7 @@ class BaseConsumer(object):
             # standard raw packet; guaranteed  to have a routing_key of the form
             # <frame id>.<address>, where the address is one we're subscribed to
             try:
-                self.handle_packet(frame)
+                self.handle_packet(formatted_addr, frame)
             except:
                 self._logger.critical("exception handling packet", exc_info = True)
             
@@ -297,7 +298,7 @@ class BaseConsumer(object):
     
     
     # {{{ handle_packet
-    def handle_packet(self, packet):
+    def handle_packet(self, formatted_addr, packet):
         ## for testing only; subclasses should override
         self._logger.debug(unicode(str(packet), errors='replace'))
         

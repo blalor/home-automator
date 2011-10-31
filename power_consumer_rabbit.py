@@ -16,7 +16,7 @@ class PowerConsumer(consumer.BaseConsumer):
     
     
     # {{{ handle_packet
-    def handle_packet(self, xbee_frame):
+    def handle_packet(self, formatted_addr, xbee_frame):
         # {'_timestamp': datetime.datetime(2011, 10, 30, 17, 44, 49, 595486),
         #  'id': 'zb_rx',
         #  'options': '\x01',
