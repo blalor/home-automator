@@ -42,20 +42,24 @@ class BaseConsumer(object):
             pika.ConnectionParameters(host='pepe')
         )
         
-        self._channel = self._connection.channel()
+        # channel for working with raw packets
+        self._pkt_channel = self._connection.channel()
         
-        self.declare_exchanges(self._channel)
+        # channel for transmitting packets
+        self._rpc_channel = self._connection.channel()
+        
+        self.declare_exchanges(self._pkt_channel)
         
         # create new queue exclusively for us
-        self._queue_name = self._channel.queue_declare(exclusive = True).method.queue
+        self._queue_name = self._pkt_channel.queue_declare(exclusive = True).method.queue
         
         # configure 
-        self._channel.basic_consume(self.__on_receive_packet,
+        self._pkt_channel.basic_consume(self.__on_receive_packet,
                                     queue = self._queue_name,
                                     no_ack = True)
         
         for addr in self.xbee_addresses:
-            self._channel.queue_bind(exchange = 'raw_xbee_packets',
+            self._pkt_channel.queue_bind(exchange = 'raw_xbee_packets',
                                      queue = self._queue_name,
                                      routing_key = '*.' + addr.lower())
         
@@ -176,7 +180,7 @@ class BaseConsumer(object):
         
         self._logger.debug("sending message")
         corr_id = str(uuid.uuid4())
-        self._channel.basic_publish(
+        self._rpc_channel.basic_publish(
             exchange = '',
             routing_key = 'xbee_tx',
             properties = pika.BasicProperties(
@@ -219,7 +223,7 @@ class BaseConsumer(object):
     
     # {{{ process_forever
     def process_forever(self):
-        self._channel.start_consuming()
+        self._pkt_channel.start_consuming()
     
     # }}}
     
@@ -229,7 +233,7 @@ class BaseConsumer(object):
         
         self.__shutdown = True
         
-        self._channel.stop_consuming()
+        self._pkt_channel.stop_consuming()
         self._connection.close()
         
         self._logger.info("shutdown complete")
@@ -278,7 +282,7 @@ class BaseConsumer(object):
     
     # {{{ publish_sensor_data
     def publish_sensor_data(self, routing_key, body):
-        self._channel.basic_publish(
+        self._pkt_channel.basic_publish(
             exchange = 'sensor_data',
             routing_key = routing_key,
             body = pickle.dumps(body, pickle.HIGHEST_PROTOCOL)

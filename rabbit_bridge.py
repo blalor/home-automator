@@ -28,31 +28,49 @@ class RabbitBridge(consumer.BaseConsumer):
     def __init__(self):
         consumer.BaseConsumer.__init__(self)
         
+        ## map of correlation IDs, frame IDs, and destinations
+        self.__correlations = {}
+        
         self._connection = pika.BlockingConnection(
             pika.ConnectionParameters(host='pepe')
         )
         
-        self._channel = self._connection.channel()
+        # channel for raw XBee packets
+        self._pkt_channel = self._connection.channel()
         
         # create the exchange, if necessary
-        self._channel.exchange_declare(exchange = 'raw_xbee_packets',
+        self._pkt_channel.exchange_declare(exchange = 'raw_xbee_packets',
                                        type = 'topic')
         
+        # channel for receiving transmission packets
+        self._rpc_channel = self._connection.channel()
+       
         # queue for receiving frames to be sent to XBee devices
-        self._channel.queue_declare(queue = 'xbee_tx')
+        self._rpc_channel.queue_declare(queue = 'xbee_tx')
         
-        self._channel.basic_qos(prefetch_count = 1)
-        self._channel.basic_consume(self.handle_xb_tx, queue = 'xbee_tx')
+        self._rpc_channel.basic_qos(prefetch_count = 1)
+        self._rpc_channel.basic_consume(self.handle_xb_tx, queue = 'xbee_tx')
         
-        ## map of correlation IDs, frame IDs, and destinations
-        self.__correlations = {}
+        rpc_consume_thread = threading.Thread(target = self._rpc_channel.start_consuming)
+        rpc_consume_thread.daemon = True
+        rpc_consume_thread.start()
     
     # }}}
     
     # {{{ on_request
     def handle_xb_tx(self, ch, method, props, body):
-        req = pickle.loads(body)
+        try:
+            req = pickle.loads(body)
+        except:
+            self._logger.error("unable to load pickle")
+            ch.basic_ack(delivery_tag = method.delivery_tag)
+            return
         
+        if not hasattr(props, 'correlation_id'):
+            self._logger.error("got message without correlation; dropping")
+            ch.basic_ack(delivery_tag = method.delivery_tag)
+            return
+            
         self._logger.debug(
             "TX method %s for dest %s with correlation ID %s",
             req['method'], req['dest'], props.correlation_id
@@ -117,13 +135,14 @@ class RabbitBridge(consumer.BaseConsumer):
             
             # this is a response of some kind
             if frame['frame_id'] in self.__correlations:
-                correlation_data = self.__correlations[frame]
-                del self.__correlations[frame]
+                correlation_data = self.__correlations[frame['frame_id']]
+                del self.__correlations[frame['frame_id']]
                 
                 frame_addr = correlation_data['dest']
                 props.correlation_id = correlation_data['correlation_id']
             else:
-                self._logger.error("got response to a command I didn't send: %s", str(frame))
+                # self._logger.error("got response to a command I didn't send: %s", str(frame))
+                pass
         
         elif 'source_addr' in frame:
             frame_addr = self._format_addr(frame['source_addr'])
@@ -134,9 +153,9 @@ class RabbitBridge(consumer.BaseConsumer):
         # something like "zb_rx.00:11:22:33:44:55:66:0a"
         routing_key = '%s.%s' % (frame['id'], frame_addr)
         
-        self._logger.debug("routing_key: %s", routing_key)
+        # self._logger.debug("routing_key: %s", routing_key)
         
-        self._channel.basic_publish(
+        self._pkt_channel.basic_publish(
             exchange = 'raw_xbee_packets',
             properties = props,
             routing_key = routing_key,
