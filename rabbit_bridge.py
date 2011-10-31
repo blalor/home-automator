@@ -116,8 +116,8 @@ class RabbitBridge(consumer.BaseConsumer):
         # ack that the message's been handled
         ch.basic_ack(delivery_tag = method.delivery_tag)
         
-        # wait for response for 10s
-        response_received_event.wait(10)
+        # wait for response for 30s
+        response_received_event.wait(30)
         
         if not response_received_event.is_set():
             self._logger.warn("no response received for %s", props.correlation_id)
@@ -125,7 +125,7 @@ class RabbitBridge(consumer.BaseConsumer):
         # ok, we should now have the result
         with self.__correlation_lock:
             resp_frame = self.__correlations.pop(frame_id)['response']
-    
+        
         ch.basic_publish(
             exchange = '',
             routing_key = props.reply_to,
@@ -134,8 +134,8 @@ class RabbitBridge(consumer.BaseConsumer):
             ),
             body = serialize(resp_frame)
         )
-    
         
+    
     
     # }}}
     
@@ -169,15 +169,15 @@ class RabbitBridge(consumer.BaseConsumer):
         else:
             if 'source_addr' in frame:
                 frame_addr = self._format_addr(frame['source_addr'])
-            
+                
                 if 'source_addr_long' in frame:
                     frame_addr = self._format_addr(frame['source_addr_long'])
-        
+            
             # something like "zb_rx.00:11:22:33:44:55:66:0a"
             routing_key = '%s.%s' % (frame['id'], frame_addr)
-        
+            
             self._logger.debug("routing_key: %s", routing_key)
-        
+            
             self._pkt_channel.basic_publish(
                 exchange = 'raw_xbee_packets',
                 routing_key = routing_key,

@@ -31,7 +31,6 @@ class FuelOilTankConsumer(consumer.BaseConsumer):
         else:
             self._logger.error("bad data: %s", unicode(data, errors = 'replace'))
         
-        return True
     
     # }}}
 

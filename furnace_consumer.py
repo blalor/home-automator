@@ -11,10 +11,10 @@ import struct
 import signal
 import threading
 
-import consumer
+import rabbit_consumer as consumer
 import SimpleXMLRPCServer
 
-class FurnaceConsumer(consumer.DatabaseConsumer):
+class FurnaceConsumer(consumer.BaseConsumer):
     zone_states = {
         0 : "unknown",
         1 : "active",
@@ -22,117 +22,102 @@ class FurnaceConsumer(consumer.DatabaseConsumer):
     }
     
     # {{{ __init__
-    def __init__(self, db_name, xbee_address = []):
-        consumer.DatabaseConsumer.__init__(self, db_name, xbee_addresses = [xbee_address])
+    def __init__(self, addr):
+        self.__xbee_address = addr
+        self.__timer_remaining = None
         
-        ## only supporting a single address; __init__ parses addresses
-        self.xbee_address = self.xbee_addresses[0]
-        
-        self.timer_remaining = -1
+        super(FurnaceConsumer, self).__init__([self.__xbee_address])
+    
     # }}}
     
-    # {{{ calc_checksum
-    def calc_checksum(self, data):
+    # {{{ __calc_checksum
+    def __calc_checksum(self, data):
         chksum = len(data)
-
+        
         for x in data:
             chksum += ord(x)
-
+        
         chksum = (0x100 - (chksum & 0xFF))
-
+        
         return chksum
     # }}}
     
     # {{{ handle_packet
-    def handle_packet(self, frame):
-        if frame['id'] != 'zb_rx':
-            self._logger.debug("unhandled frame id %s", frame['id'])
-            return False
-        
-        now = self.now()
-        
+    def handle_packet(self, formatted_addr, frame):
         data = frame['rf_data']
         
         if data.startswith('\xff\x55'):
             data_len = ord(data[2])
             
-            if self.calc_checksum(data[3:-1]) == ord(data[-1]):
+            if self.__calc_checksum(data[3:-1]) == ord(data[-1]):
                 sample = struct.unpack("<BBBH?HB", data)
                 
                 zone_state = self.zone_states[sample[3]]
                 powered = sample[4]
-                self.timer_remaining = sample[5]
+                self.__timer_remaining = sample[5]
                 
                 self._logger.debug(
                     "zone %s, powered: %s, time remaining: %d" % (
                         zone_state,
                         str(powered),
-                        self.timer_remaining
+                        self.__timer_remaining
                     )
                 )
                 
                 if zone_state != 'unknown':
+                    db_zone_val = 0
+                    
                     if zone_state == 'active':
                         db_zone_val = 1
-                    else:
-                        db_zone_val = 0
                     
-                    try:
-                        self.dbc.execute(
-                            """
-                            insert into furnace (ts_utc, zone_active)
-                            values (?, ?)
-                            """,
-                            (
-                                time.mktime(now.timetuple()),
-                                db_zone_val
-                            )
-                        )
-                    except:
-                        self._logger.error("unable to insert record into database", exc_info = True)
-                
+                    sensor_frame = {
+                        'timestamp' : frame['_timestamp'],
+                        'zone_active' : db_zone_val,
+                    }
+                    
+                    self.publish_sensor_data('furnace', sensor_frame)
+                    
             else:
                 self._logger.warn("bad checksum")
         
-        return True
     
     # }}}
     
     # {{{ start_timer
     def start_timer(self, duration = 420):
         self._logger.info("starting timer; duration %d", duration)
-        self.timer_remaining = duration
+        self.__timer_remaining = duration
         
         payload = struct.pack("<cH", 'S', duration)
         msg = '\xff\x55%s%s%s' % (
             struct.pack('<B', len(payload)),
             payload,
-            struct.pack('<B', self.calc_checksum(payload))
+            struct.pack('<B', self.__calc_checksum(payload))
         )
         
-        return self._send_data(self.xbee_address, msg)
+        return self._send_data(self.__xbee_address, msg)
     
     # }}}
     
     # {{{ cancel_timer
     def cancel_timer(self):
         self._logger.info("cancelling timer")
-        self.timer_remaining = 0
+        self.__timer_remaining = 0
         
         payload = struct.pack("<c", 'C')
         msg = '\xff\x55%s%s%s' % (
             struct.pack('<B', len(payload)),
             payload,
-            struct.pack('<B', self.calc_checksum(payload))
+            struct.pack('<B', self.__calc_checksum(payload))
         )
         
-        return self._send_data(self.xbee_address, msg)
+        return self._send_data(self.__xbee_address, msg)
     
     # }}}
     
     # {{{ get_time_remaining
     def get_time_remaining(self):
-        return self.timer_remaining
+        return self.__timer_remaining
     
     # }}}
 
@@ -150,11 +135,11 @@ def main():
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
     
     logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.INFO)
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    fc = FurnaceConsumer(basedir + '/sensors.db', xbee_address = '00:11:22:33:44:55:66:4d')
+    fc = FurnaceConsumer('00:11:22:33:44:55:66:4d')
     xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10101))
     
     try:

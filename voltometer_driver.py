@@ -4,14 +4,16 @@
 # proxies data from the power monitor to the "volt-o-meter" gauge.
 
 import sys, os
-import consumer
-import time
-import logging, logging.handlers
-import signal, threading
-
 import daemonizer
+
+import logging, logging.handlers
+
+import signal
+import threading
+
 import struct
 
+import rabbit_consumer as consumer
 import SimpleXMLRPCServer
 
 def calc_checksum(data):
@@ -42,66 +44,54 @@ class VoltometerDriver(consumer.BaseConsumer):
     # little (lot) narrower, though
     POWER_METER_MAX = 32.0
     
-    def __init__(self, power_mon_addr, voltometer_addr):
-        consumer.BaseConsumer.__init__(
-            self,
-            xbee_addresses = [power_mon_addr, voltometer_addr]
+    # {{{ __init__
+    def __init__(self, voltometer_addr):
+        self.voltometer_addr = voltometer_addr
+        
+        super(VoltometerDriver, self).__init__([self.voltometer_addr])
+        
+        ## additional AMQP work to subscribe to electric meter messages
+        self._sensor_data_chan = self._connection.channel()
+        
+        # create new queue exclusively sensor data messages
+        self._meter_queue = self._sensor_data_chan.queue_declare(exclusive = True).method.queue
+        
+        self._sensor_data_chan.basic_consume(self.__handle_meter_packet,
+                                             queue = self._meter_queue,
+                                             no_ack = True)
+        
+        # listen for electric meter messages
+        self._sensor_data_chan.queue_bind(exchange = 'sensor_data',
+                                          queue = self._meter_queue,
+                                          routing_key = 'electric_meter')
+    
+    # }}}
+    
+    # {{{ __handle_meter_packet
+    def __handle_meter_packet(self, ch, method, props, body):
+        sensor_frame = self._deserialize(body)
+        
+        clamp_tot = sensor_frame['clamp1_amps'] + sensor_frame['clamp2_amps']
+        
+        # range of volt meter is ~0-35, although scale goes to 40
+        # conveniently, with the dryer on, the house current draw is about
+        # 40…
+        
+        # scale clamp reading to volt meter scale
+        volt_meter_val = (clamp_tot*self.VOLT_METER_MAX)/self.POWER_METER_MAX
+        
+        # scale volt_meter_val to nearest integer PWM value (0-255), apply correction factor
+        pwm_val_raw = (volt_meter_val*255)/self.VOLT_METER_MAX
+        
+        # constrain value to 255
+        pwm_val = min(int(round(pwm_val_raw - (pwm_val_raw * 0.11))), 255)
+        
+        self._logger.debug(
+            'clamp: %.2f, volt meter: %.2f, pwm: %d',
+            clamp_tot, volt_meter_val, pwm_val
         )
         
-        # we only need to concern ourselves with the destination address
-        self.voltometer_addr = self.xbee_addresses[1]
-    
-    
-    # {{{ handle_packet
-    # parses a packet from the power meter and feeds it to the volt meter
-    def handle_packet(self, frame):
-        # {'id': 'zb_rx',
-        #  'options': '\x01',
-        #  'rf_data': '#23:71#\r\n',
-        #  'src_addr': '\x18:',
-        #  'src_addr_long': '\x00\x13\xa2\x00@:[\n'}
-        
-        if frame['id'] != 'zb_rx':
-            self._logger.debug("unhandled frame id %s", frame['id'])
-            return False
-        
-        # #853:0#
-        # readings given in amps * 100
-        
-        data = frame['rf_data'].strip()
-        if data.startswith('#') and data.endswith('#'):
-            
-            clamp1, clamp2 = [int(c)/100.0 for c in data[1:-1].split(":")]
-            
-            clamp_tot = clamp1 + clamp2
-            
-            # range of volt meter is ~0-35, although scale goes to 40
-            # conveniently, with the dryer on, the house current draw is about
-            # 40…
-            
-            # scale clamp reading to volt meter scale
-            volt_meter_val = (clamp_tot*self.VOLT_METER_MAX)/self.POWER_METER_MAX
-            
-            # scale volt_meter_val to nearest integer PWM value (0-255), apply correction factor
-            pwm_val_raw = (volt_meter_val*255)/self.VOLT_METER_MAX
-            
-            # constrain value to 255
-            pwm_val = min(int(round(pwm_val_raw - (pwm_val_raw * 0.11))), 255)
-            
-            self._logger.debug(
-                'clamp: %.2f, volt meter: %.2f, pwm: %d',
-                clamp_tot, volt_meter_val, pwm_val
-            )
-            
-            # kludge to work around bad design in consumer.
-            # don't wait for an ack; causing a deadlock while waiting for a 
-            # response that won't arrive because we're not consuming responses. :-)
-            self._send_data(self.voltometer_addr, build_packet('M', pwm_val), wait_for_ack = False)
-            
-        else:
-            self._logger.error("bad data: %s", unicode(data, errors = 'replace'))
-        
-        return True
+        self._send_data(self.voltometer_addr, build_packet('M', pwm_val))
     
     # }}}
     
@@ -123,7 +113,7 @@ class VoltometerDriver(consumer.BaseConsumer):
 def main():
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    daemonizer.createDaemon()
+    # daemonizer.createDaemon()
     
     handler = logging.handlers.RotatingFileHandler(basedir + "/logs/voltometer.log",
                                                    maxBytes=(5 * 1024 * 1024),
@@ -132,11 +122,11 @@ def main():
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
     
     logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG)
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    vd = VoltometerDriver(power_mon_addr = '00:11:22:33:44:55:66:0a', voltometer_addr = '00:11:22:33:44:55:66:e2')
+    vd = VoltometerDriver('00:11:22:33:44:55:66:e2')
     xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10104))
     
     try:

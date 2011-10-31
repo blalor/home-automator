@@ -9,8 +9,8 @@ Copyright (c) 2011 __MyCompanyName__. All rights reserved.
 
 import sys, os
 
-import logging
-import logging.handlers
+import logging, logging.handlers
+import daemonizer
 
 import time
 import pika
@@ -25,6 +25,7 @@ class Listener(object):
         'temperature.*',
         'humidity.*',
         'oil_tank',
+        'furnace',
     )
     
     # {{{ __init__
@@ -49,7 +50,7 @@ class Listener(object):
         q_result = self._channel.queue_declare(exclusive = True)
         self._queue_name = q_result.method.queue
         
-        self._channel.basic_consume(self.handle_packet,
+        self._channel.basic_consume(self.__on_receive_message,
                                     queue = self._queue_name,
                                     no_ack = True)
         
@@ -62,8 +63,8 @@ class Listener(object):
     
     # }}}
     
-    # {{{ handle_packet
-    def handle_packet(self, channel, method, properties, body):
+    # {{{ __on_receive_message
+    def __on_receive_message(self, channel, method, properties, body):
         frame = pickle.loads(body)
         
         query = None
@@ -108,6 +109,13 @@ class Listener(object):
                 frame['height'],
             )
         
+        elif method.routing_key == 'furnace':
+            query = "insert into furnace (ts_utc, zone_active) values (?, ?)"
+            data = (
+                time.mktime(frame['timestamp'].timetuple()),
+                frame['zone_active']
+            )
+        
         else:
             self._logger.critical("UNKNOWN ROUTING KEY %s", method.routing_key)
         
@@ -134,6 +142,8 @@ class Listener(object):
 def main():
     basedir = os.path.abspath(os.path.dirname(__file__))
     
+    daemonizer.createDaemon()
+    
     handler = logging.handlers.RotatingFileHandler(basedir + '/logs/db_logger.log',
                                                    maxBytes=(5 * 1024 * 1024),
                                                    backupCount=5)
@@ -141,7 +151,7 @@ def main():
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
     
     logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.DEBUG)
+    logging.getLogger().setLevel(logging.INFO)
     
     try:
         Listener().consume()

@@ -4,15 +4,17 @@
 import sys, os
 import daemonizer
 
-import time
 import logging, logging.handlers
 
 import signal
 import threading
 
-import consumer
+import rabbit_consumer as consumer
 import SimpleXMLRPCServer
-import random
+
+class InvalidSprinkler(Exception):
+    pass
+
 
 class SprinklerConsumer(consumer.BaseConsumer):
     # mapping of sprinkler ID to DIO config command
@@ -23,39 +25,21 @@ class SprinklerConsumer(consumer.BaseConsumer):
     
     # {{{ __init__
     def __init__(self, xbee_address):
-        consumer.BaseConsumer.__init__(self, xbee_addresses = [xbee_address])
-        
-        ## only supporting a single address; __init__ parses addresses
-        self.xbee_address = self.xbee_addresses[0]
+        self.xbee_address = xbee_address
         
         self.__sprinkler_active = {
             1 : False,
             2 : False,
         }
         
+        super(SprinklerConsumer, self).__init__([self.xbee_address])
+        
+    
     # }}}
     
     # {{{ handle_packet
-    def handle_packet(self, frame):
-        # {'name':'remote_at_response',
-        #  'structure':
-        #     [{'name':'frame_id',        'len':1},
-        #      {'name':'source_addr_long','len':8},
-        #      {'name':'source_addr',     'len':2},
-        #      {'name':'command',         'len':2},
-        #      {'name':'status',          'len':1},
-        #      {'name':'parameter',       'len':None}]},
-        
-        if frame['id'] == 'remote_at_response':
-            self._logger.debug("not handling remote_at_response frame")
-            return False
-        
-        # if frame['id'] != 'remote_at_response':
-        #     self._logger.debug("unhandled frame id %s", frame['id'])
-        #     return False
-        
-        self._logger.info("not handling other frame: " + unicode(str(frame), errors='replace'))
-        return False
+    def handle_packet(self, formatted_addr, frame):
+        self._logger.info("handle_packet not implemented handling %s", frame)
     
     # }}}
     
@@ -126,7 +110,7 @@ def main():
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    sc = SprinklerConsumer(xbee_address = '00:11:22:33:44:55:66:1d')
+    sc = SprinklerConsumer('00:11:22:33:44:55:66:1d')
     xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10103))
     
     try:

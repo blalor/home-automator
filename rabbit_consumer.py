@@ -77,12 +77,12 @@ class BaseConsumer(object):
     # }}}
     
     # {{{ serialize
-    def serialize(self, data):
+    def _serialize(self, data):
         return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
     # }}}
     
     # {{{ deserialize
-    def deserialize(self, data):
+    def _deserialize(self, data):
         return pickle.loads(data)
     # }}}
     
@@ -97,6 +97,7 @@ class BaseConsumer(object):
         
         channel.exchange_declare(exchange = 'raw_xbee_packets', type = 'topic')
         channel.exchange_declare(exchange = 'sensor_data', type = 'topic')
+        channel.exchange_declare(exchange = 'events', type = 'topic')
     
     # }}}
     
@@ -136,47 +137,65 @@ class BaseConsumer(object):
     #      {'name':'parameter',       'len':None,     'default':None}],
     def _send_remote_at(self, dest, command, param_val = None):
         if dest not in self.xbee_addresses:
-            raise InvalidDestination("destination address %s is not configured for this consumer" % self._format_addr(dest))
+            raise InvalidDestination("destination address %s is not configured for this consumer" % dest)
         
         success = False
         
-        frame_id = self.next_frame_id()
+        corr_id = str(uuid.uuid4())
+        reply_received_event = threading.Event()
         
-        self.xbee.remote_at(frame_id = frame_id,
-                            dest_addr_long = dest,
-                            command = command,
-                            parameter = param_val)
+        with self.__remote_at_msgs_rlock:
+            self.__remote_at_msgs[corr_id] = {
+                'event' : reply_received_event,
+                'response' : None,
+            }
         
-        while True:
-            try:
-                frame = self.__remote_at_msg_queue.get(True, 1)
-                # frame is guaranteed to have id == remote_at_response
-                self._logger.debug("remote_at_response: " + unicode(str(frame), errors='replace'))
-                
-                if (frame['frame_id'] == frame_id):
-                    if frame['status'] == '\x00':
-                        # success!
-                        success = True
-                        self._logger.debug("successfully sent remote AT command")
-                    elif frame['status'] == '\x01':
-                        # error
-                        self._logger.error("unspecified error sending remote AT command")
-                    elif frame['status'] == '\x02':
-                        # invalid command
-                        self._logger.error("invalid command sending remote AT command")
-                    elif frame['status'] == '\x03':
-                        # invalid parameter
-                        self._logger.error("invalid parameter sending remote AT command")
-                    elif frame['status'] == '\x04':
-                        # remote command transmission failed
-                        self._logger.error("remote AT command transmission failed")
-                    
-                    break
-            except Queue.Empty:
-                pass
+        self._rpc_channel.basic_publish(
+            exchange = '',
+            routing_key = 'xbee_tx',
+            properties = pika.BasicProperties(
+                reply_to = self._queue_name,
+                correlation_id = corr_id,
+            ),
+            body = self._serialize({
+                'method' : 'send_remote_at',
+                'dest' : dest,
+                'command' : command,
+                'param_val' : param_val,
+            })
+        )
+        
+        # wait 30s for the reply to our call to be received
+        reply_received_event.wait(30)
+        
+        with self.__remote_at_msgs_rlock:
+            frame = self.__remote_at_msgs.pop(corr_id)['response']
+            
+        if reply_received_event.is_set() and (frame != None):
+            # frame is guaranteed to have id == remote_at_response
+            
+            if frame['status'] == '\x00':
+                # success!
+                success = True
+                self._logger.debug("successfully sent remote AT command")
+            elif frame['status'] == '\x01':
+                # error
+                self._logger.error("unspecified error sending remote AT command")
+            elif frame['status'] == '\x02':
+                # invalid command
+                self._logger.error("invalid command sending remote AT command")
+            elif frame['status'] == '\x03':
+                # invalid parameter
+                self._logger.error("invalid parameter sending remote AT command")
+            elif frame['status'] == '\x04':
+                # remote command transmission failed
+                self._logger.error("remote AT command transmission failed")
+            
+        else:
+            self._logger.warn("no remote AT reply received from %s for %s with correlation %s", dest, command, corr_id)
         
         return success
-        
+    
     # }}}
     
     
@@ -208,7 +227,7 @@ class BaseConsumer(object):
                 reply_to = self._queue_name,
                 correlation_id = corr_id,
             ),
-            body = self.serialize({
+            body = self._serialize({
                 'method' : 'send_data',
                 'dest' : dest,
                 'data' : data,
@@ -217,12 +236,12 @@ class BaseConsumer(object):
         
         self._logger.debug("message sent")
         
-        # wait 10s for the reply to our call to be received
-        reply_received_event.wait(10)
+        # wait 30s for the reply to our call to be received
+        reply_received_event.wait(30)
         
         with self.__status_msgs_rlock:
             frame = self.__status_msgs.pop(corr_id)['response']
-            
+        
         if reply_received_event.is_set() and (frame != None):
             # frame is guaranteed to have id == zb_tx_status
             
@@ -236,7 +255,7 @@ class BaseConsumer(object):
                     ord(frame['retries']), ord(frame['delivery_status'])
                 )
         else:
-            self._logger.warn("no reply received from %s for %s", dest, data)
+            self._logger.warn("no packet ack received from %s for %s with correlation %s", dest, data, corr_id)
         
         return success
     
@@ -266,7 +285,7 @@ class BaseConsumer(object):
         self._logger.debug("received packet from exchange '%s' with routing key %s and correlation_id %s",
                            method.exchange, method.routing_key, props.correlation_id)
         
-        frame = self.deserialize(body)
+        frame = self._deserialize(body)
         formatted_addr = method.routing_key.split('.')[0]
         
         # we get both standard "raw" frames AND RPC replies in this handler
@@ -280,10 +299,18 @@ class BaseConsumer(object):
                         self.__status_msgs[props.correlation_id]['response'] = frame
                         self.__status_msgs[props.correlation_id]['event'].set()
                     else:
-                        self._logger.error("got reply for unknown correlation: %s", frame)
-                
+                        self._logger.error("got zb_tx_status reply for unknown correlation %s: %s",
+                                           props.correlation_id, frame)
+            
             elif frame['id'] == 'remote_at_response':
-                pass
+                with self.__remote_at_msgs_rlock:
+                    if props.correlation_id in self.__remote_at_msgs:
+                        self.__remote_at_msgs[props.correlation_id]['response'] = frame
+                        self.__remote_at_msgs[props.correlation_id]['event'].set()
+                    else:
+                        self._logger.error("got remote_at_response reply for unknown correlation %s: %s",
+                                           props.correlation_id, frame)
+            
             
         else:
             # standard raw packet; guaranteed  to have a routing_key of the form
@@ -301,8 +328,6 @@ class BaseConsumer(object):
     def handle_packet(self, formatted_addr, packet):
         ## for testing only; subclasses should override
         self._logger.debug(unicode(str(packet), errors='replace'))
-        
-        return True
     
     # }}}
     
@@ -311,7 +336,17 @@ class BaseConsumer(object):
         self._pkt_channel.basic_publish(
             exchange = 'sensor_data',
             routing_key = routing_key,
-            body = self.serialize(body)
+            body = self._serialize(body)
+        )
+    
+    # }}}
+    
+    # {{{ publish_event
+    def publish_event(self, routing_key, body):
+        self._pkt_channel.basic_publish(
+            exchange = 'events',
+            routing_key = routing_key,
+            body = self._serialize(body)
         )
     
     # }}}
