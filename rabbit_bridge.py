@@ -199,7 +199,7 @@ def main():
                                                    maxBytes=(5 * 1024 * 1024),
                                                    backupCount=5)
     
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s -- %(message)s"))
     
     logging.getLogger().addHandler(handler)
     logging.getLogger().setLevel(logging.DEBUG)
