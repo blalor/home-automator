@@ -2,14 +2,8 @@
 # -*- coding: utf-8 -*-
 
 import sys, os
-import daemonizer
 
-import time
-import logging, logging.handlers
 import struct
-
-import signal
-import threading
 
 import rabbit_consumer as consumer
 import SimpleXMLRPCServer
@@ -124,18 +118,18 @@ class FurnaceConsumer(consumer.BaseConsumer):
 
 
 def main():
+    import signal
+    import threading
+    import daemonizer
+    
+    import log_config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    daemonizer.createDaemon()
+    # daemonizer.createDaemon()
+    # log_config.init_logging(basedir + "/logs/furnace.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/furnace.log",
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
-    
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    log_config.init_logging_stdout()
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     

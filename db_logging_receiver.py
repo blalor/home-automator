@@ -9,8 +9,7 @@ Copyright (c) 2011 __MyCompanyName__. All rights reserved.
 
 import sys, os
 
-import logging, logging.handlers
-import daemonizer
+import logging
 
 import time
 import pika
@@ -140,26 +139,22 @@ class Listener(object):
 
 
 def main():
+    import daemonizer
+    
+    import log_config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    daemonizer.createDaemon()
+    # daemonizer.createDaemon()
+    # log_config.init_logging(basedir + "/logs/db_logger.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + '/logs/db_logger.log',
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
-    
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    log_config.init_logging_stdout()
     
     try:
         Listener().consume()
     finally:
         logging.shutdown()
     
-
-
 
 
 if __name__ == '__main__':

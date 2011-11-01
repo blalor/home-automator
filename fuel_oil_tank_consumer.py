@@ -36,18 +36,14 @@ class FuelOilTankConsumer(consumer.BaseConsumer):
 
 
 def main():
+    import log_config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
     daemonizer.createDaemon()
+    log_config.init_logging(basedir + "/logs/oil_tank.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/oil_tank.log",
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
-    
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    # log_config.init_logging_stdout()
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     

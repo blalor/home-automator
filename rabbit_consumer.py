@@ -4,13 +4,10 @@
 # base class(es) for implementing packet consumers from the raw_xbee_packets exchange.
 
 import sys,os
-import socket
 
 import pika
 
 import logging
-import logging.handlers
-import daemonizer
 import threading
 import uuid
 
@@ -354,22 +351,22 @@ class BaseConsumer(object):
 
 
 if __name__ == '__main__':
+    import daemonizer
+    
+    import log_config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
     # daemonizer.createDaemon()
+    # log_config.init_logging(basedir + "/logs/base_consumer.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + '/logs/consumer.log',
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
+    log_config.init_logging_stdout()
     
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.DEBUG)
+    bc = BaseConsumer()
     
     try:
-        BaseConsumer().process_forever()
+        bc.process_forever()
     finally:
-        BaseConsumer().shutdown()
+        bc.shutdown()
         logging.shutdown()
 

@@ -4,9 +4,6 @@
 # consume raw frames and produce data frames
 
 import sys, os
-import logging, logging.handlers
-import signal
-import daemonizer
 
 import rabbit_consumer as consumer
 
@@ -67,18 +64,17 @@ class LightTempConsumerRabbit(consumer.BaseConsumer):
 
 
 def main():
+    import signal
+    import daemonizer
+    
+    import log_config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    daemonizer.createDaemon()
+    # daemonizer.createDaemon()
+    # log_config.init_logging(basedir + "/logs/xbee_lt.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/xbee_lt.log",
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
-    
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    log_config.init_logging_stdout()
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     

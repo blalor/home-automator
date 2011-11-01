@@ -11,12 +11,8 @@ Copyright (c) 2009 __MyCompanyName__. All rights reserved.
 from __future__ import with_statement
 
 import sys, os
-import signal
-import time
-import daemonizer
 
 import SocketServer, socket
-import logging, logging.handlers
 
 import threading
 import Queue
@@ -156,6 +152,7 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
                         data_len = struct.unpack('!I', header_dat)[0]
                         packet = pickle.loads(self.request.recv(data_len, socket.MSG_WAITALL))
                         self.server.send_packet(packet[0], **packet[1])
+                
                 except socket.timeout:
                     # timeout reading data
                     pass
@@ -196,18 +193,17 @@ class XBeeRequestHandler(SocketServer.BaseRequestHandler):
 
 
 def main():
+    import daemonizer
+    import signal
+    
+    import log_config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
     daemonizer.createDaemon()
+    log_config.init_logging(basedir + "/logs/dispatcher.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/dispatcher.log",
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
-    
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    # log_config.init_logging_stdout()
     
     server = XBeeDispatcher(
         # "socket",
