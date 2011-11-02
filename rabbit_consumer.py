@@ -23,7 +23,7 @@ class InvalidDestination(Exception):
 
 class BaseConsumer(object):
     # {{{ __init__
-    def __init__(self, addrs = ()):
+    def __init__(self, addrs = ('#')):
         """
         bindings is a tuple of <frame_type>.address strings
         """
@@ -35,31 +35,33 @@ class BaseConsumer(object):
         
         self.__shutdown = False
         
-        self._connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host='pepe')
-        )
+        self.__connection_rlock = threading.RLock()
+        
+        self._connection = self._create_connection()
         
         # channel for working with raw packets
-        self._pkt_channel = self._connection.channel()
+        self._channel = self._connection.channel()
         
-        self.declare_exchanges(self._pkt_channel)
+        self.declare_exchanges(self._channel)
         
         # create new queue exclusively for us (channel is arbitrary)
-        self._queue_name = self._pkt_channel.queue_declare(exclusive = True).method.queue
+        self._queue_name = self._channel.queue_declare(exclusive = True).method.queue
         
-        # channel for transmitting packets
-        self._rpc_channel = self._connection.channel()
         
         # configure callback for all packets
-        self._pkt_channel.basic_consume(self.__on_receive_packet,
-                                        queue = self._queue_name,
-                                        no_ack = True)
+        self._channel.basic_consume(self.__on_receive_packet,
+                                    queue = self._queue_name,
+                                    no_ack = True)
         
         # bind routing keys to queue
         for addr in self.xbee_addresses:
-            self._pkt_channel.queue_bind(exchange = 'raw_xbee_packets',
-                                         queue = self._queue_name,
-                                         routing_key = '*.' + addr.lower())
+            rk = '*.' + addr.lower()
+            
+            self._logger.debug("binding routing key %s to raw_xbee_packets", rk)
+            
+            self._channel.queue_bind(exchange = 'raw_xbee_packets',
+                                     queue = self._queue_name,
+                                     routing_key = rk)
         
         # queue for status frames that aren't explicitly handled in handle_packet,
         # so that __send_data can get to them.
@@ -73,12 +75,20 @@ class BaseConsumer(object):
     
     # }}}
     
-    # {{{ serialize
+    # {{{ _create_connection
+    def _create_connection(self):
+        return pika.BlockingConnection(
+            pika.ConnectionParameters(host='pepe')
+        )
+    
+    # }}}
+    
+    # {{{ _serialize
     def _serialize(self, data):
         return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
     # }}}
     
-    # {{{ deserialize
+    # {{{ _deserialize
     def _deserialize(self, data):
         return pickle.loads(data)
     # }}}
@@ -147,20 +157,21 @@ class BaseConsumer(object):
                 'response' : None,
             }
         
-        self._rpc_channel.basic_publish(
-            exchange = '',
-            routing_key = 'xbee_tx',
-            properties = pika.BasicProperties(
-                reply_to = self._queue_name,
-                correlation_id = corr_id,
-            ),
-            body = self._serialize({
-                'method' : 'send_remote_at',
-                'dest' : dest,
-                'command' : command,
-                'param_val' : param_val,
-            })
-        )
+        with self.__connection_rlock:
+            self._channel.basic_publish(
+                exchange = '',
+                routing_key = 'xbee_tx',
+                properties = pika.BasicProperties(
+                    reply_to = self._queue_name,
+                    correlation_id = corr_id,
+                ),
+                body = self._serialize({
+                    'method' : 'send_remote_at',
+                    'dest' : dest,
+                    'command' : command,
+                    'param_val' : param_val,
+                })
+            )
         
         # wait 30s for the reply to our call to be received
         reply_received_event.wait(30)
@@ -205,8 +216,6 @@ class BaseConsumer(object):
         
         success = False
         
-        self._logger.debug("sending message")
-        
         corr_id = str(uuid.uuid4())
         reply_received_event = threading.Event()
         
@@ -216,22 +225,20 @@ class BaseConsumer(object):
                 'response' : None,
             }
         
-        
-        self._rpc_channel.basic_publish(
-            exchange = '',
-            routing_key = 'xbee_tx',
-            properties = pika.BasicProperties(
-                reply_to = self._queue_name,
-                correlation_id = corr_id,
-            ),
-            body = self._serialize({
-                'method' : 'send_data',
-                'dest' : dest,
-                'data' : data,
-            })
-        )
-        
-        self._logger.debug("message sent")
+        with self.__connection_rlock:
+            self._channel.basic_publish(
+                exchange = '',
+                routing_key = 'xbee_tx',
+                properties = pika.BasicProperties(
+                    reply_to = self._queue_name,
+                    correlation_id = corr_id,
+                ),
+                body = self._serialize({
+                    'method' : 'send_data',
+                    'dest' : dest,
+                    'data' : data,
+                })
+            )
         
         # wait 30s for the reply to our call to be received
         reply_received_event.wait(30)
@@ -260,7 +267,33 @@ class BaseConsumer(object):
     
     # {{{ process_forever
     def process_forever(self):
-        self._pkt_channel.start_consuming()
+        self.__shutdown_event = threading.Event()
+        
+        t = threading.Thread(target = self._channel.start_consuming, name = "proc_4evr")
+        # t.daemon = True
+        t.start()
+        
+        while True:
+            if not t.is_alive():
+                self._logger.critical("thread %s died", t.name)
+                break
+            
+            if self.__shutdown_event.is_set():
+                self._logger.info("shutdown event set")
+                break
+            else:
+                try:
+                    self.__shutdown_event.wait(0.01)
+                except KeyboardInterrupt:
+                    self.__shutdown_event.set()
+                
+            
+        
+        with self.__connection_rlock:
+            self._channel.stop_consuming()
+            self._connection.close()
+        
+        self._logger.info("shutdown complete")
     
     # }}}
     
@@ -268,58 +301,55 @@ class BaseConsumer(object):
     def shutdown(self):
         self._logger.info("shutting down")
         
-        self.__shutdown = True
+        self.__shutdown_event.set()
         
-        self._pkt_channel.stop_consuming()
-        self._connection.close()
-        
-        self._logger.info("shutdown complete")
         
     # }}}
     
     # {{{ __on_receive_packet
     def __on_receive_packet(self, ch, method, props, body):
-        self._logger.debug("received packet from exchange '%s' with routing key %s and correlation_id %s",
-                           method.exchange, method.routing_key, props.correlation_id)
-        
-        frame = self._deserialize(body)
-        formatted_addr = method.routing_key.split('.')[0]
-        
-        # we get both standard "raw" frames AND RPC replies in this handler
-        
-        # differentiate replies from raw packets
-        if (props.correlation_id != None) and (method.routing_key == self._queue_name):
-            # this is a reply
-            if frame['id'] == 'zb_tx_status':
-                with self.__status_msgs_rlock:
-                    if props.correlation_id in self.__status_msgs:
-                        self.__status_msgs[props.correlation_id]['response'] = frame
-                        self.__status_msgs[props.correlation_id]['event'].set()
-                    else:
-                        self._logger.error("got zb_tx_status reply for unknown correlation %s: %s",
-                                           props.correlation_id, frame)
+        try:
+            self._logger.debug("received packet from exchange '%s' with routing key %s and correlation_id %s",
+                               method.exchange, method.routing_key, props.correlation_id)
             
-            elif frame['id'] == 'remote_at_response':
-                with self.__remote_at_msgs_rlock:
-                    if props.correlation_id in self.__remote_at_msgs:
-                        self.__remote_at_msgs[props.correlation_id]['response'] = frame
-                        self.__remote_at_msgs[props.correlation_id]['event'].set()
-                    else:
-                        self._logger.error("got remote_at_response reply for unknown correlation %s: %s",
-                                           props.correlation_id, frame)
+            # we get both standard "raw" frames AND RPC replies in this handler
             
+            frame = self._deserialize(body)
             
-        else:
-            # standard raw packet; guaranteed  to have a routing_key of the form
-            # <frame id>.<address>, where the address is one we're subscribed to
-            try:
+            # differentiate replies from raw packets
+            if (props.correlation_id != None) and (method.routing_key == self._queue_name):
+                # this is a reply
+                if frame['id'] == 'zb_tx_status':
+                    with self.__status_msgs_rlock:
+                        if props.correlation_id in self.__status_msgs:
+                            self.__status_msgs[props.correlation_id]['response'] = frame
+                            self.__status_msgs[props.correlation_id]['event'].set()
+                        else:
+                            self._logger.error("got zb_tx_status reply for unknown correlation %s: %s",
+                                               props.correlation_id, frame)
+                
+                elif frame['id'] == 'remote_at_response':
+                    with self.__remote_at_msgs_rlock:
+                        if props.correlation_id in self.__remote_at_msgs:
+                            self.__remote_at_msgs[props.correlation_id]['response'] = frame
+                            self.__remote_at_msgs[props.correlation_id]['event'].set()
+                        else:
+                            self._logger.error("got remote_at_response reply for unknown correlation %s: %s",
+                                               props.correlation_id, frame)
+                
+            
+            else:
+                # standard raw packet; guaranteed  to have a routing_key of the form
+                # <frame id>.<address>, where the address is one we're subscribed to
+                
+                frame_type, formatted_addr = method.routing_key.split('.')
+                
                 self.handle_packet(formatted_addr, frame)
-            except:
-                self._logger.critical("exception handling packet", exc_info = True)
             
-        
-    # }}}
+        except:
+            self._logger.critical("exception handling packet", exc_info = True)
     
+    # }}}
     
     # {{{ handle_packet
     def handle_packet(self, formatted_addr, packet):
@@ -330,21 +360,23 @@ class BaseConsumer(object):
     
     # {{{ publish_sensor_data
     def publish_sensor_data(self, routing_key, body):
-        self._pkt_channel.basic_publish(
-            exchange = 'sensor_data',
-            routing_key = routing_key,
-            body = self._serialize(body)
-        )
+        with self.__connection_rlock:
+            self._channel.basic_publish(
+                exchange = 'sensor_data',
+                routing_key = routing_key,
+                body = self._serialize(body)
+            )
     
     # }}}
     
     # {{{ publish_event
     def publish_event(self, routing_key, body):
-        self._pkt_channel.basic_publish(
-            exchange = 'events',
-            routing_key = routing_key,
-            body = self._serialize(body)
-        )
+        with self.__connection_rlock:
+            self._channel.basic_publish(
+                exchange = 'events',
+                routing_key = routing_key,
+                body = self._serialize(body)
+            )
     
     # }}}
     

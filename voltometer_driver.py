@@ -46,7 +46,8 @@ class VoltometerDriver(consumer.BaseConsumer):
         super(VoltometerDriver, self).__init__([self.voltometer_addr])
         
         ## additional AMQP work to subscribe to electric meter messages
-        self._sensor_data_chan = self._connection.channel()
+        ## yes, multiple connections for thread safety
+        self._sensor_data_chan = self._create_connection().channel()
         
         # create new queue exclusively sensor data messages
         self._meter_queue = self._sensor_data_chan.queue_declare(exclusive = True).method.queue
@@ -59,34 +60,42 @@ class VoltometerDriver(consumer.BaseConsumer):
         self._sensor_data_chan.queue_bind(exchange = 'sensor_data',
                                           queue = self._meter_queue,
                                           routing_key = 'electric_meter')
+        
+        t = threading.Thread(target = self._sensor_data_chan.start_consuming,
+                             name = 'sens_dat')
+        t.daemon = True
+        t.start()
     
     # }}}
     
     # {{{ __handle_meter_packet
     def __handle_meter_packet(self, ch, method, props, body):
-        sensor_frame = self._deserialize(body)
+        try:
+            sensor_frame = self._deserialize(body)
         
-        clamp_tot = sensor_frame['clamp1_amps'] + sensor_frame['clamp2_amps']
+            clamp_tot = sensor_frame['clamp1_amps'] + sensor_frame['clamp2_amps']
         
-        # range of volt meter is ~0-35, although scale goes to 40
-        # conveniently, with the dryer on, the house current draw is about
-        # 40…
+            # range of volt meter is ~0-35, although scale goes to 40
+            # conveniently, with the dryer on, the house current draw is about
+            # 40…
         
-        # scale clamp reading to volt meter scale
-        volt_meter_val = (clamp_tot*self.VOLT_METER_MAX)/self.POWER_METER_MAX
+            # scale clamp reading to volt meter scale
+            volt_meter_val = (clamp_tot*self.VOLT_METER_MAX)/self.POWER_METER_MAX
         
-        # scale volt_meter_val to nearest integer PWM value (0-255), apply correction factor
-        pwm_val_raw = (volt_meter_val*255)/self.VOLT_METER_MAX
+            # scale volt_meter_val to nearest integer PWM value (0-255), apply correction factor
+            pwm_val_raw = (volt_meter_val*255)/self.VOLT_METER_MAX
         
-        # constrain value to 255
-        pwm_val = min(int(round(pwm_val_raw - (pwm_val_raw * 0.11))), 255)
+            # constrain value to 255
+            pwm_val = min(int(round(pwm_val_raw - (pwm_val_raw * 0.11))), 255)
         
-        self._logger.debug(
-            'clamp: %.2f, volt meter: %.2f, pwm: %d',
-            clamp_tot, volt_meter_val, pwm_val
-        )
+            self._logger.debug(
+                'clamp: %.2f, volt meter: %.2f, pwm: %d',
+                clamp_tot, volt_meter_val, pwm_val
+            )
         
-        self._send_data(self.voltometer_addr, build_packet('M', pwm_val))
+            self._send_data(self.voltometer_addr, build_packet('M', pwm_val))
+        except:
+            self._logger.critical("exception handling meter packet", exc_info = True)
     
     # }}}
     

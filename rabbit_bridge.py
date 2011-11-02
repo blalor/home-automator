@@ -40,6 +40,8 @@ class RabbitBridge(consumer.BaseConsumer):
         self.__correlations = {}
         self.__correlation_lock = threading.RLock()
         
+        self.__connection_lock = threading.RLock()
+        
         self._connection = pika.BlockingConnection(
             pika.ConnectionParameters(host='pepe')
         )
@@ -72,7 +74,10 @@ class RabbitBridge(consumer.BaseConsumer):
             req = deserialize(body)
         except:
             self._logger.error("unable to load pickle")
-            ch.basic_ack(delivery_tag = method.delivery_tag)
+            
+            with self.__connection_lock:
+                ch.basic_ack(delivery_tag = method.delivery_tag)
+            
             return
         
         self._logger.debug(
@@ -114,10 +119,15 @@ class RabbitBridge(consumer.BaseConsumer):
             
         
         # ack that the message's been handled
-        ch.basic_ack(delivery_tag = method.delivery_tag)
+        with self.__connection_lock:
+            ch.basic_ack(delivery_tag = method.delivery_tag)
         
-        # wait for response for 30s
-        response_received_event.wait(30)
+        self._logger.debug("XBee command sent and message ack'd")
+        
+        # wait for response for 10s
+        response_received_event.wait(10)
+        
+        self._logger.debug("done waiting for event")
         
         if not response_received_event.is_set():
             self._logger.warn("no response received for %s", props.correlation_id)
@@ -126,14 +136,17 @@ class RabbitBridge(consumer.BaseConsumer):
         with self.__correlation_lock:
             resp_frame = self.__correlations.pop(frame_id)['response']
         
-        ch.basic_publish(
-            exchange = '',
-            routing_key = props.reply_to,
-            properties = pika.BasicProperties(
-                correlation_id = props.correlation_id
-            ),
-            body = serialize(resp_frame)
-        )
+        self._logger.debug("response frame: %s", resp_frame)
+        
+        with self.__connection_lock:
+            ch.basic_publish(
+                exchange = '',
+                routing_key = props.reply_to,
+                properties = pika.BasicProperties(
+                    correlation_id = props.correlation_id
+                ),
+                body = serialize(resp_frame)
+            )
         
     
     
@@ -178,11 +191,12 @@ class RabbitBridge(consumer.BaseConsumer):
             
             self._logger.debug("routing_key: %s", routing_key)
             
-            self._pkt_channel.basic_publish(
-                exchange = 'raw_xbee_packets',
-                routing_key = routing_key,
-                body = serialize(frame)
-            )
+            with self.__connection_lock:
+                self._pkt_channel.basic_publish(
+                    exchange = 'raw_xbee_packets',
+                    routing_key = routing_key,
+                    body = serialize(frame)
+                )
         
         return True
     
