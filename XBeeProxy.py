@@ -49,7 +49,10 @@ class XBeeProxy(XBee):
         with self.__socket_send_lock:
             # self.socket.settimeout(None)
             
-            data = pickle.dumps((name, kwargs), pickle.HIGHEST_PROTOCOL)
+            # don't use pickle.HIGHEST_PROTOCOL; there seems to be a problem
+            # deserializing pickled data on a 32-bit machine that was 
+            # serialized on a 64-bit machine
+            data = pickle.dumps((name, kwargs))
             self.socket.sendall(struct.pack('!I', len(data)))
             self.socket.sendall(data)
     
