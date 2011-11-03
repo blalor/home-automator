@@ -172,7 +172,7 @@ def main():
         logging.error("unhandled exception", exc_info=True)
     finally:
         c.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

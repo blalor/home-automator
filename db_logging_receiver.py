@@ -153,7 +153,7 @@ def main():
     try:
         Listener().consume()
     finally:
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

@@ -226,7 +226,7 @@ def main():
         logging.debug("cleaning up")
         server.server_close()
         # os.unlink("socket")
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

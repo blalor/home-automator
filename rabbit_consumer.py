@@ -400,5 +400,5 @@ if __name__ == '__main__':
         bc.process_forever()
     finally:
         bc.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
 

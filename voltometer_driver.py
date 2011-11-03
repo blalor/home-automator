@@ -149,9 +149,8 @@ def main():
         
     finally:
         vd.shutdown()
-        
         xrs.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

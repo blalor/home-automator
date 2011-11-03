@@ -229,7 +229,7 @@ def main():
         
     finally:
         rb.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

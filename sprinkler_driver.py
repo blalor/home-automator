@@ -121,7 +121,7 @@ def main():
     finally:
         sc.shutdown()
         xrs.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

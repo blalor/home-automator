@@ -86,7 +86,7 @@ def main():
         logging.error("unhandled exception", exc_info=True)
     finally:
         pc.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

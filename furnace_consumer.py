@@ -153,7 +153,7 @@ def main():
     finally:
         fc.shutdown()
         xrs.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

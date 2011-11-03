@@ -55,7 +55,7 @@ def main():
         logging.error("unhandled exception", exc_info=True)
     finally:
         fc.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
     
 
 
