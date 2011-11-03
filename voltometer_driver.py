@@ -46,8 +46,8 @@ class VoltometerDriver(consumer.BaseConsumer):
         super(VoltometerDriver, self).__init__([self.voltometer_addr])
         
         ## additional AMQP work to subscribe to electric meter messages
-        ## yes, multiple connections for thread safety
-        self._sensor_data_chan = self._create_connection().channel()
+        self._sensor_data_conn = self._create_broker_connection()
+        self._sensor_data_chan = self._sensor_data_conn.channel()
         
         # create new queue exclusively sensor data messages
         self._meter_queue = self._sensor_data_chan.queue_declare(exclusive = True).method.queue
