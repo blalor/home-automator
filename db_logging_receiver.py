@@ -46,19 +46,29 @@ class Listener(object):
         self._channel = self._connection.channel()
         
         # create new queue exclusively for us
-        q_result = self._channel.queue_declare(exclusive = True)
+        q_result = self._channel.queue_declare(queue = 'db_inserts')
         self._queue_name = q_result.method.queue
         
         self._channel.basic_consume(self.__on_receive_message,
-                                    queue = self._queue_name,
-                                    no_ack = True)
+                                    queue = self._queue_name)
         
         # bind to routing keys
         for rk in self.ROUTING_KEYS:
-            self._channel.queue_bind(exchange = 'sensor_data',
-                                     queue = self._queue_name,
-                                     routing_key = rk)
+            try:
+                self._channel.queue_bind(self.__queue_did_bind,
+                                         nowait = True,
+                                         exchange = 'sensor_data',
+                                         queue = self._queue_name,
+                                         routing_key = rk)
+            except:
+                self._logger.error("error binding", exc_info = True)
         
+    
+    # }}}
+    
+    # {{{ __queue_did_bind
+    def __queue_did_bind(self, *args):
+        self._logger.debug("queue did bind: %s", args)
     
     # }}}
     
@@ -121,17 +131,28 @@ class Listener(object):
         if query and data:
             self._logger.debug("%s %s", frame['timestamp'].isoformat(), str((query, data)))
             
+            can_ack = False
             try:
                 self.dbc.execute(query, data)
+                can_ack = True
+            except sqlite3.IntegrityError:
+                self._logger.error("IntegrityError executing query %s", str((query, data)), exc_info = True)
+                can_ack = True
             except:
                 self._logger.critical("error executing query %s", str((query, data)), exc_info = True)
+            
+            if can_ack:
+                channel.basic_ack(delivery_tag = method.delivery_tag)
     
     # }}}
     
-    # {{{ consume
-    def consume(self):
-        self._channel.start_consuming()
-    
+    # {{{ process_forever
+    def process_forever(self):
+        try:
+            self._channel.start_consuming()
+        finally:
+            self._channel.stop_consuming()
+            self._connection.close()
     
     # }}}
 
@@ -151,7 +172,7 @@ def main():
     log_config.init_logging_stdout()
     
     try:
-        Listener().consume()
+        Listener().process_forever()
     finally:
         log_config.shutdown()
     
