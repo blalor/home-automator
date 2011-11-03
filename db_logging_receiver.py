@@ -11,7 +11,7 @@ import sys, os
 
 import logging
 
-import time
+import datetime, time
 import pika
 import cPickle as pickle
 
@@ -44,7 +44,8 @@ class DBLogger(object):
                                    isolation_level = None,
                                    timeout = 5)
         
-        
+        self.latest_event_received = {}
+    
     
     # }}}
     
@@ -99,6 +100,23 @@ class DBLogger(object):
     # {{{ on_receive_message
     def on_receive_message(self, channel, method, properties, body):
         frame = pickle.loads(body)
+        
+        rk = method.routing_key
+        timestamp = frame['timestamp']
+        
+        latest_event = datetime.datetime.fromtimestamp(0)
+        
+        if rk in self.latest_event_received:
+            latest_event = self.latest_event_received[rk]
+            
+            if timestamp < latest_event:
+                self._logger.warn(
+                    "message out of sequence for %s; %s < %s",
+                    rk, timestamp.isoformat(), latest_event.isoformat()
+                )
+            
+        
+        self.latest_event_received[rk] = timestamp
         
         query = None
         data = ()
