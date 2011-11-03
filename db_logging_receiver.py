@@ -62,18 +62,39 @@ class DBLogger(object):
         self.channel.queue_declare(queue = 'db_inserts', callback = self.on_queue_declared)
     
     
+    def do_queue_bind(self, exchange, queue_name, routing_key):
+        # see on_queue_declared or why this method is here
+        
+        self.channel.queue_bind(exchange = exchange,
+                                queue = queue_name,
+                                routing_key = routing_key,
+                                callback = lambda f: self.queue_did_bind(routing_key, queue_name, exchange, f))
+    
+    
     def on_queue_declared(self, frame):
         self._logger.debug("queue declared: %s", frame)
+        
+        for rk in self.ROUTING_KEYS:
+            # need the do_queue_bind method in order to pass the routing key 
+            # to the queue_did_bind callback. callback doesn't get any 
+            # information on WHAT was bound (routing key, queue name, 
+            # exchange, etc), so to provide it I have to do the lambda 
+            # jiggery pokery, but due to scoping problems, the lambda always
+            # executes with the "current" value of the routing key, and since
+            # the first queue_did_bind callback is called after the last 
+            # queue_bind invocation, it always gets self.ROUTING_KEYS[-1] for
+            # the routing key
+            self.do_queue_bind('sensor_data', frame.method.queue, rk)
         
         self.channel.basic_consume(self.on_receive_message,
                                    queue = frame.method.queue)
         
-        for rk in self.ROUTING_KEYS:
-            self.channel.queue_bind(exchange = 'sensor_data',
-                                    queue = frame.method.queue,
-                                    routing_key = rk)
-            
     
+    # {{{ queue_did_bind
+    def queue_did_bind(self, routing_key, queue_name, exchange, frame):
+        self._logger.debug("queue %s bound to exchange %s with %s", queue_name, exchange, routing_key)
+    
+    # }}}
     
     # {{{ on_receive_message
     def on_receive_message(self, channel, method, properties, body):
