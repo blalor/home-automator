@@ -1,7 +1,7 @@
 #!/usr/bin/env python2.6
 # encoding: utf-8
 """
-dispatcher_rabbit.py
+dispatcher.py
 
 Created by Brian Lalor on 2011-11-01.
 """

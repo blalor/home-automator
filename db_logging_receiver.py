@@ -124,7 +124,7 @@ class DBLogger(object):
         if method.routing_key == 'electric_meter':
             query = "insert into power (ts_utc, clamp1, clamp2) values (?, ?, ?)"
             data = (
-                time.mktime(frame['timestamp'].timetuple()),
+                time.mktime(timestamp.timetuple()),
                 frame['clamp1_amps'],
                 frame['clamp2_amps'],
             )
@@ -132,7 +132,7 @@ class DBLogger(object):
         elif method.routing_key.startswith('temperature.'):
             query = "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)"
             data = (
-                time.mktime(frame['timestamp'].timetuple()),
+                time.mktime(timestamp.timetuple()),
                 frame['node_id'],
                 frame['temp_C'],
             )
@@ -140,7 +140,7 @@ class DBLogger(object):
         elif method.routing_key.startswith('light.'):
             query = "insert into light (ts_utc, node_id, light_val) values (?, ?, ?)"
             data = (
-                time.mktime(frame['timestamp'].timetuple()),
+                time.mktime(timestamp.timetuple()),
                 frame['node_id'],
                 frame['light'],
             )
@@ -148,7 +148,7 @@ class DBLogger(object):
         elif method.routing_key.startswith('humidity.'):
             query = "insert into humidity (ts_utc, node_id, rel_humid) values (?, ?, ?)"
             data = (
-                time.mktime(frame['timestamp'].timetuple()),
+                time.mktime(timestamp.timetuple()),
                 frame['node_id'],
                 frame['rel_humid'],
             )
@@ -156,14 +156,14 @@ class DBLogger(object):
         elif method.routing_key == 'oil_tank':
             query = "insert into oil_tank (ts_utc, height) values (?, ?)"
             data = (
-                time.mktime(frame['timestamp'].timetuple()),
+                time.mktime(timestamp.timetuple()),
                 frame['height'],
             )
         
         elif method.routing_key == 'furnace':
             query = "insert into furnace (ts_utc, zone_active) values (?, ?)"
             data = (
-                time.mktime(frame['timestamp'].timetuple()),
+                time.mktime(timestamp.timetuple()),
                 frame['zone_active']
             )
         
@@ -171,7 +171,7 @@ class DBLogger(object):
             self._logger.critical("UNKNOWN ROUTING KEY %s", method.routing_key)
         
         if query and data:
-            self._logger.debug("%s %s", frame['timestamp'].isoformat(), str((query, data)))
+            self._logger.debug("%s %s", timestamp.isoformat(), str((query, data)))
             
             can_ack = False
             try:
