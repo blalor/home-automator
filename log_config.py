@@ -15,7 +15,7 @@ import logging, logging.handlers
 from logging import shutdown
 
 def init_logging_stdout(level = logging.DEBUG):
-    handler = logging.StreamHandler(stream = sys.stdout)
+    handler = logging.StreamHandler(sys.stdout)
     
     config_root_logger(handler, level)
 
