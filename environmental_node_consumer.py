@@ -84,7 +84,7 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
                 self.publish_sensor_data('temperature.' + formatted_addr, sensor_frame)
                 self.publish_sensor_data('humidity.' + formatted_addr, sensor_frame)
             else:
-                self._logger.error("bad data: %s", unicode(sdata, errors = 'replace'))
+                self._logger.error("bad data: %s", unicode(frame['rf_data'], errors = 'replace'))
         
     
     # }}}
