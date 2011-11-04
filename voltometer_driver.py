@@ -44,27 +44,6 @@ class VoltometerDriver(consumer.BaseConsumer):
         self.voltometer_addr = voltometer_addr
         
         super(VoltometerDriver, self).__init__([self.voltometer_addr])
-        
-        ## additional AMQP work to subscribe to electric meter messages
-        self._sensor_data_conn = self._create_broker_connection()
-        self._sensor_data_chan = self._sensor_data_conn.channel()
-        
-        # create new queue exclusively sensor data messages
-        self._meter_queue = self._sensor_data_chan.queue_declare(exclusive = True).method.queue
-        
-        self._sensor_data_chan.basic_consume(self.__handle_meter_packet,
-                                             queue = self._meter_queue,
-                                             no_ack = True)
-        
-        # listen for electric meter messages
-        self._sensor_data_chan.queue_bind(exchange = 'sensor_data',
-                                          queue = self._meter_queue,
-                                          routing_key = 'electric_meter')
-        
-        t = threading.Thread(target = self._sensor_data_chan.start_consuming,
-                             name = 'sens_dat')
-        t.daemon = True
-        t.start()
     
     # }}}
     
@@ -97,6 +76,49 @@ class VoltometerDriver(consumer.BaseConsumer):
         except:
             self._logger.critical("exception handling meter packet", exc_info = True)
     
+    # }}}
+    
+    # {{{ __run_thread
+    def __run_thread(self):
+        ## additional AMQP work to subscribe to electric meter messages
+        self._sensor_data_conn = self._create_broker_connection()
+        self._sensor_data_chan = self._sensor_data_conn.channel()
+        
+        # create new queue exclusively sensor data messages
+        _meter_queue = self._sensor_data_chan.queue_declare(exclusive = True).method.queue
+        
+        self._sensor_data_chan.basic_consume(self.__handle_meter_packet,
+                                             queue = _meter_queue,
+                                             no_ack = True)
+        
+        # listen for electric meter messages
+        self._sensor_data_chan.queue_bind(exchange = 'sensor_data',
+                                          queue = _meter_queue,
+                                          routing_key = 'electric_meter')
+        
+        self._sensor_data_chan.start_consuming()
+        
+    
+    # }}}
+    
+    # {{{ process_forever
+    def process_forever(self):
+        self._logger.debug("starting sens_dat thread")
+        t = threading.Thread(target = self.__run_thread, name = 'sens_dat')
+        # t.daemon = True
+        t.start()
+        
+        self._logger.debug("invoking parent process_forever")
+        
+        super(VoltometerDriver, self).process_forever()
+        
+        self._logger.debug("parent process_forever returned; closing sensor data channel")
+        
+        self._sensor_data_chan.stop_consuming()
+        self._sensor_data_conn.close()
+        
+        self._logger.debug("process_forever complete")
+        
     # }}}
     
     # {{{ set_light

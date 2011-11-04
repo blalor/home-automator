@@ -56,7 +56,8 @@ class BaseConsumer(object):
         
         # channel for transmitting packets
         self.__rpc_conn = self._create_broker_connection()
-        self.__rpc_chan = self.__xb_frame_conn.channel()
+        self.__rpc_chan = self.__rpc_conn.channel()
+        self.__rpc_chan_lock = threading.RLock()
         
         # channel and connection for publishing sensor data and events
         self.__publisher_conn = self._create_broker_connection()
@@ -149,15 +150,16 @@ class BaseConsumer(object):
                 'response' : None,
             }
         
-        self.__rpc_chan.basic_publish(
-            exchange = '',
-            routing_key = 'xbee_tx',
-            properties = pika.BasicProperties(
-                reply_to = self.__queue_name,
-                correlation_id = corr_id,
-            ),
-            body = self._serialize(msg_body)
-        )
+        with self.__rpc_chan_lock:
+            self.__rpc_chan.basic_publish(
+                exchange = '',
+                routing_key = 'xbee_tx',
+                properties = pika.BasicProperties(
+                    reply_to = self.__queue_name,
+                    correlation_id = corr_id,
+                ),
+                body = self._serialize(msg_body)
+            )
         
         # wait 30s for the reply to our call to be received
         reply_received_event.wait(30)
