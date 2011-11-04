@@ -52,6 +52,11 @@ class DBLogger(object):
     
     def on_connected(self, conn):
         self._logger.info("connection opened")
+        
+        self.connection.add_on_close_callback(
+            lambda _conn: self._logger.warn("connection closed")
+        )
+        
         self.connection.channel(self.on_channel_open)
     
     
@@ -59,6 +64,10 @@ class DBLogger(object):
         self.channel = chan
         
         self._logger.info("channel opened: %s", self.channel)
+        
+        self.channel.add_on_close_callback(
+            lambda code, msg: self._logger.warn("channel closed: %d %s", code, msg)
+        )
         
         # create new queue 
         self.channel.queue_declare(queue = 'db_inserts', callback = self.on_queue_declared)
@@ -194,27 +203,45 @@ class DBLogger(object):
             self.connection.ioloop.start()
         finally:
             self._logger.info("cleaning up")
-            self.connection.close()
+            
+            if self.connection.is_open:
+                self.connection.close()
+            
             self.connection.ioloop.start()
+        
+    
+    def shutdown(self):
+        self._logger.info("shutdown initiated")
+        
+        if self.connection.is_open:
+            self.connection.close()
+    
         
 
 
 def main():
-    import daemonizer
+    import daemonizer, signal
     import log_config
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     
+    ## standard config
     daemonizer.createDaemon()
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    
     log_config.init_logging(basedir + "/logs/db_logger.log")
     
+    ## debug config
     # log_config.init_logging_stdout()
     
     try:
         dbl = DBLogger('pepe', basedir + '/sensors.db')
+        
+        signal.signal(signal.SIGQUIT, lambda signum, frame: dbl.shutdown())
+        signal.signal(signal.SIGTERM, lambda signum, frame: dbl.shutdown())
+        signal.signal(signal.SIGINT, lambda signum, frame: dbl.shutdown())
+        
         dbl.process_forever()
-    except KeyboardInterrupt:
-        pass
     except:
         logging.critical("uncaught exception", exc_info = True)
     finally:
