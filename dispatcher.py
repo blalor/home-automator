@@ -3,234 +3,314 @@
 """
 dispatcher.py
 
-Created by Brian Lalor on 2009-06-15.
-Copyright (c) 2009 __MyCompanyName__. All rights reserved.
+Created by Brian Lalor on 2011-11-01.
 """
+
+## XBee instance spawns thread that fires callback when frame received.
+## That callback will send the message to the broker.
+
+## serialize XBee frames with pickle; json can't handle binary data (unless 
+## it's base64'd)
 
 ## http://effbot.org/zone/thread-synchronization.htm
 from __future__ import with_statement
 
 import sys, os
-import signal
-import time
-import daemonizer
-
-import SocketServer, socket
-import logging, logging.handlers
-
+import random
+import datetime
 import threading
-import Queue
+import logging
 
+import pika
 import xbee, serial
-import struct
+
 import cPickle as pickle
 
-# class XBeeDispatcher(SocketServer.ThreadingUnixStreamServer):
-class XBeeDispatcher(SocketServer.ThreadingTCPServer):
-    daemon_threads = True
-    allow_reuse_address = True
+# {{{ _format_addr
+def format_addr(addr):
+    return ":".join(['%02x' % ord(x) for x in addr])
+
+# }}}
+
+# {{{ serialize
+def serialize(data):
+    return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
+
+# }}}
+
+# {{{ deserialize
+def deserialize(data):
+    return pickle.loads(data)
+
+# }}}
+
+# {{{ parse_addr
+def parse_addr(addr):
+    paddr = None
     
-    def __init__(self, address, ser):
-        self.serial = ser
+    if addr != None:
+        paddr = "".join(chr(int(x, 16)) for x in addr.split(":"))
+    
+    return paddr
+
+# }}}
+
+# {{{ format_addr
+def format_addr(addr):
+    return ":".join(['%02x' % ord(x) for x in addr])
+
+# }}}
+
+
+class XBeeDispatcher(object):
+    RAW_XBEE_PACKET_EXCHANGE = 'raw_xbee_packets'
+    
+    # {{{ __init__
+    def __init__(self, broker_host, serial_port, baudrate):
+        super(XBeeDispatcher, self).__init__()
         
         self._logger = logging.getLogger(self.__class__.__name__)
         
-        # SocketServer.ThreadingUnixStreamServer.__init__(self, address, XBeeRequestHandler)
-        SocketServer.TCPServer.__init__(self, address, XBeeRequestHandler)
-    
-    def server_activate(self):
-        self.__shutdown = False
+        self.__serial_port = serial_port
+        self.__baudrate = baudrate
         
-        self.__active_clients = []
-        self.__active_clients_lock = threading.RLock()
+        connection_params = pika.ConnectionParameters(host = broker_host)
         
-        self.__serial_write_lock = threading.RLock()
+        self.xbee = None
         
-        # SocketServer.ThreadingUnixStreamServer.server_activate(self)
-        SocketServer.TCPServer.server_activate(self)
+        self.__frame_id = chr(((random.randint(1, 255)) % 255) + 1)
         
-        self._logger.info('request queue size: %d', self.request_queue_size)
+        self.__correlations = {}
+        self.__correlation_lock = threading.RLock()
         
-        ## start XBee communication thread here
-        self.xbee_thread = xbee.XBee(self.serial, callback = self.dispatch_packet)
+        # set up connection/channel for sending received XBee packets to the
+        # broker
+        self._xb_rx_conn = pika.BlockingConnection(connection_params)
         
-    
-    
-    def serve_forever(self):
-        while not self.__shutdown:
-            self.handle_request()
-    
-    
-    def server_close(self):
-        self.__shutdown = True
+        self._xb_rx_chan = self._xb_rx_conn.channel()
+        self._xb_rx_chan.exchange_declare(
+            exchange = self.RAW_XBEE_PACKET_EXCHANGE,
+            type = 'topic'
+        )
         
-        # SocketServer.ThreadingUnixStreamServer.server_close(self)
-        SocketServer.TCPServer.server_close(self)
+        # set up connection/channel for receiving frames to be sent to 
+        # XBee devices
+        self._xb_tx_conn = pika.BlockingConnection(connection_params)
         
-        ## close down XBee comm thread
-        self.xbee_thread.halt()
-        self.serial.close()
-        del self.xbee_thread
+        self._xb_tx_chan = self._xb_tx_conn.channel()
+        self._xb_tx_chan.queue_declare(queue = 'xbee_tx')
+        self._xb_tx_chan.basic_qos(prefetch_count = 1)
+        self._xb_tx_chan.basic_consume(self.__handle_xb_tx, queue = 'xbee_tx')
+    
+    # }}}
+    
+    # {{{ __next_frame_id
+    def __next_frame_id(self):
+        # increment frame_id but constrain to 1..255.  Seems to go
+        # 2,4,6,…254,1,3,5…255. Whatever.
+        self.__frame_id = chr(((ord(self.__frame_id) + 1) % 255) + 1)
         
+        return self.__frame_id
     
+    # }}}
     
-    def add_active_client(self, client):
-        with self.__active_clients_lock:
-            if client not in self.__active_clients:
-                self.__active_clients.append(client)
-    
-    
-    def remove_active_client(self, client):
-        with self.__active_clients_lock:
-            if client in self.__active_clients:
-                self.__active_clients.remove(client)
-    
-    
-    def dispatch_packet(self, packet):
-        found_clients = False
-        
-        with self.__active_clients_lock:
-            for client in self.__active_clients:
-                found_clients = True
-                client.enqueue_packet(packet)
-        
-        
-        if not found_clients:
-            self._logger.error("no active clients")
-    
-    
-    def send_packet(self, name, **kwargs):
-        with self.__serial_write_lock:
-            self.xbee_thread.send(name, **kwargs)
-        
-    
-
-
-class XBeeRequestHandler(SocketServer.BaseRequestHandler):
-    def __init__(self, request, client_address, server):
-        self._logger = logging.getLogger(self.__class__.__name__)
-        
-        SocketServer.BaseRequestHandler.__init__(self, request, client_address, server)
-    
-    
-    def enqueue_packet(self, packet):
-        try:
-            self.packet_queue.put(packet)
-        except Queue.Full:
-            self._logger.error("queue is full!")
-    
-    
-    def setup(self):
-        self.packet_queue = Queue.Queue()
-        
-        ## add ourselves to the server's list of active clients
-        self.server.add_active_client(self)
-        
-        ## think this might only work with TCP sockets
-        self.request.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        self._logger.debug("new connection")
-    
-    
-    def handle(self):
-        ## we *must* ensure that finish() gets called, which only happens when
-        ## handle() returns successfully.
-        
-        header_len = struct.calcsize('!I')
+    # {{{ __handle_xb_tx
+    def __handle_xb_tx(self, chan, method, props, body):
+        ## no need for a connection lock since we're running in the main
+        ## thread, and there isn't any possibility for concurrent access
+        ## to the connection for this thread
         
         try:
-            connection_alive = True
+            ## ack the message; there's nothing below that would be recoverable
+            ## if the same message were received again
+            chan.basic_ack(delivery_tag = method.delivery_tag)
             
-            while connection_alive:
-                # enable short timeout for receiving data
-                self.request.settimeout(0.25)
+            req = deserialize(body)
+            
+            self._logger.debug(
+                "TX method %s for dest %s with correlation ID %s",
+                req['method'], req['dest'], props.correlation_id
+            )
+            
+            # mapping of frame id to message properties; used to direct the
+            # response
+            frame_id = self.__next_frame_id()
+            
+            with self.__correlation_lock:
+                self.__correlations[frame_id] = {
+                    'props' : props,
+                }
+            
+            if req['method'] == 'send_remote_at':
+                # {'method' : 'send_remote_at',
+                #  'dest' : <addr>,
+                #  'command' : …,
+                #  'param_val' : …,
+                # }
+                self.xbee.remote_at(frame_id = frame_id,
+                                    dest_addr_long = parse_addr(req['dest']),
+                                    command = req['command'],
+                                    parameter = req['param_val'])
                 
-                try:
-                    header_dat = self.request.recv(header_len, socket.MSG_WAITALL)
-                    if len(header_dat) == 0:
-                        self._logger.info('peer closed the connection')
-                        connection_alive = False
-                        continue
-                    elif len(header_dat) != header_len:
-                        self._logger.error('%d bytes for header, need %d: %s', len(header_dat), header_len, " ".join(['%.2x' % (ord(c),) for c in header_dat]))
-                    else:
-                        data_len = struct.unpack('!I', header_dat)[0]
-                        packet = pickle.loads(self.request.recv(data_len, socket.MSG_WAITALL))
-                        self.server.send_packet(packet[0], **packet[1])
-                except socket.timeout:
-                    # timeout reading data
-                    pass
+            
+            elif req['method'] == 'send_data':
+                # {'method' : 'send_data',
+                #  'dest' : <addr>,
+                #  'data' : …,
+                # }
+                self.xbee.zb_tx_request(frame_id = frame_id,
+                                        dest_addr_long = parse_addr(req['dest']),
+                                        data = req['data'])
                 
-                # disable the timeout for sending data
-                self.request.settimeout(None)
-                
-                try:
-                    # pull a packet from the queue, with a blocking timeout
-                    packet = self.packet_queue.get(True, 1)
-                    data = pickle.dumps(packet, pickle.HIGHEST_PROTOCOL)
-                    
-                    self.request.sendall(struct.pack('!I', len(data)))
-                    self.request.sendall(data)
-                except Queue.Empty:
-                    pass
-                except socket.error:
-                    self._logger.error("socket error sending packet to client", exc_info = True)
-                    
-                    connection_alive = False
-                    
-                    
+            
+            self._logger.debug("XBee command sent and message ack'd")
+            
         except:
-            self._logger.error("exception handling request", exc_info = True)
+            self._logger.error("failed processing XBee TX message", exc_info = True)
+    
+    # }}}
+    
+    # {{{ __dispatch_xb_frame
+    def __dispatch_xb_frame(self, frame):
+        """handles incoming XBee frames"""
+        
+        frame['_timestamp'] = datetime.datetime.now()
+        
+        try:
+            if 'frame_id' in frame:
+                # this is a response of some kind
+                self._logger.debug("found reply of type %s with frame_id %02x",
+                                   frame['id'], ord(frame['frame_id']))
+                
+                with self.__correlation_lock:
+                    if frame['frame_id'] in self.__correlations:
+                        props = self.__correlations.pop(frame['frame_id'])['props']
+                        
+                        self._xb_rx_chan.basic_publish(
+                            exchange = '',
+                            routing_key = props.reply_to,
+                            properties = pika.BasicProperties(
+                                correlation_id = props.correlation_id
+                            ),
+                            body = serialize(frame)
+                        )
+                    else:
+                        self._logger.error(
+                            "no correlation found for response: %s",
+                            str(frame)
+                        )
+            
+            else:
+                frame_addr = 'unknown'
+                
+                if 'source_addr' in frame:
+                    frame_addr = format_addr(frame['source_addr'])
+                    
+                    if 'source_addr_long' in frame:
+                        frame_addr = format_addr(frame['source_addr_long'])
+                
+                # something like "zb_rx.00:11:22:33:44:55:66:0a"
+                routing_key = '%s.%s' % (frame['id'], frame_addr)
+                
+                self._logger.debug("routing_key: %s", routing_key)
+                
+                self._xb_rx_chan.basic_publish(
+                    exchange = self.RAW_XBEE_PACKET_EXCHANGE,
+                    routing_key = routing_key,
+                    body = serialize(frame)
+                )
+        
+        except:
+            self._logger.error(
+                "unhandled exception processing incoming frame",
+                exc_info = True
+            )
         
     
-    def finish(self):
-        ## don't do anything too fancy in here; since we're using daemon
-        ## threads, this isn't called when the server's shutting down.
-        
-        ## remove ourselves from the server's list of active clients
-        self.server.remove_active_client(self)
-        
-        ## close the socket
-        self.request.shutdown(socket.SHUT_RDWR)
-        self.request.close()
+    # }}}
     
+    # {{{ process_forever
+    def process_forever(self):
+        # create the XBee instance and provide a callback for handling frames
+        ser = serial.Serial(port = self.__serial_port,
+                            baudrate = self.__baudrate,
+                            rtscts=True)
+        
+        self.xbee = xbee.XBee(ser,
+                              shorthand = True,
+                              callback = self.__dispatch_xb_frame)
+        
+        try:
+            self._xb_tx_chan.start_consuming()
+        finally:
+            self._logger.debug("shutting down after process_forever")
+            
+            # perform shutdown operations
+            self._xb_tx_chan.stop_consuming()
+            
+            ## close down XBee comm thread
+            self.xbee.halt()
+            ser.close()
+            
+            # self._xb_tx_chan.close()
+            self._xb_tx_conn.close()
+            self._xb_rx_conn.close()
+            
+    
+    # }}}
+    
+    # {{{ shutdown
+    def shutdown(self):
+        self._logger.debug("in shutdown")
+        
+        if self._xb_tx_conn.is_open:
+            self._xb_tx_chan.stop_consuming()
+        
+        # wait for XBee thread to die
+        if self.xbee != None:
+            self.xbee.join()
+        
+        # wait for connections to close
+        while self._xb_rx_conn.is_open or self._xb_tx_conn.is_open:
+            pass
+    
+    # }}}
 
 
 def main():
+    import daemonizer
+    import signal
+    
+    import log_config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    daemonizer.createDaemon()
+    # daemonizer.createDaemon()
+    # log_config.init_logging(basedir + "/logs/dispatcher.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/dispatcher.log",
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
+    log_config.init_logging_stdout()
     
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
-    
-    server = XBeeDispatcher(
-        # "socket",
-        ('', 9999),
-        serial.Serial(port=sys.argv[1], baudrate=int(sys.argv[2]),rtscts=True)
+    dispatcher = XBeeDispatcher(
+        broker_host = 'pepe',
+        serial_port = sys.argv[1],
+        baudrate = int(sys.argv[2])
     )
     
     # The signals SIGKILL and SIGSTOP cannot be caught, blocked, or ignored.
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
-    signal.signal(signal.SIGQUIT, lambda signum, frame: server.server_close())
-    signal.signal(signal.SIGTERM, lambda signum, frame: server.server_close())
+    signal.signal(signal.SIGQUIT, lambda signum, frame: dispatcher.shutdown())
+    signal.signal(signal.SIGTERM, lambda signum, frame: dispatcher.shutdown())
     
     try:
-        server.serve_forever()
+        dispatcher.process_forever()
     except KeyboardInterrupt:
         logging.info("Interrupt caught, shutting down")
     except:
         logging.error("unhandled exception", exc_info=True)
     finally:
         logging.debug("cleaning up")
-        server.server_close()
-        # os.unlink("socket")
-        logging.shutdown()
+        dispatcher.shutdown()
+        log_config.shutdown()
     
 
 

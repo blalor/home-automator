@@ -1,120 +1,92 @@
 #!/usr/bin/env python2.6
-# encoding: utf-8
-"""
-xbee_lt_sensor.py
+# -*- coding: utf-8 -*-
 
-Created by Brian Lalor on 2010-10-29.
-Copyright (c) 2010 __MyCompanyName__. All rights reserved.
-"""
+# consume raw frames and produce data frames
 
 import sys, os
-import daemonizer
-import time
+
 import consumer
-import signal
-import struct
-import logging, logging.handlers
 
-class InvalidDeviceTypeException(Exception):
-    pass
-
-
-# {{{{ LightTempConsumer
-class LightTempConsumer(consumer.DatabaseConsumer):
+class LightTempConsumerRabbit(consumer.BaseConsumer):
     # {{{ handle_packet
-    def handle_packet(self, frame):
-        now = self.now()
+    def handle_packet(self, formatted_addr, xbee_frame):
+        # {'_timestamp': datetime.datetime(2011, 10, 30, 16, 5, 18, 223946),
+        #  'id': 'zb_rx_io_data',
+        #  'options': '\x01',
+        #  'samples': [{'adc-1': 17, 'adc-2': 613, 'dio-0': True}],
+        #  'source_addr': 'R\xc1',
+        #  'source_addr_long': '\x00\x13\xa2\x00@Un}'}
         
-        if frame['id'] != 'zb_rx_io_data':
-            self._logger.debug("unhandled frame id %s", frame['id'])
-            return False
-        
-        if 'samples' not in frame:
+        if 'samples' not in xbee_frame:
             self._logger.error("no samples in frame!")
-            return True
+            return
         
-        formatted_addr = self._format_addr(frame['source_addr_long'])
-        
-        samples = frame['samples'][0]
-        
-        light = None
-        temp_C = None
-        temp_F = None
+        samples = xbee_frame['samples'][0]
         
         if 'adc-1' not in samples:
             self._logger.warn("missing adc-1 sample")
         else:
-            light = samples['adc-1']
+            light_sample = {
+                'timestamp' : xbee_frame['_timestamp'],
+                'node_id'   : formatted_addr,
+                'light'     : samples['adc-1']
+            }
+            
+            # publish the sensor data
+            self.publish_sensor_data('light.' + formatted_addr, light_sample)
+        
         
         if 'adc-2' not in samples:
             self._logger.warn("missing adc-2 sample")
         else:
             temp_C = (self._sample_to_mv(samples['adc-2']) - 500.0) / 10.0
             
-            if formatted_addr.lower() == "00:11:22:33:44:55:66:7d":
+            if formatted_addr == "00:11:22:33:44:55:66:7d":
                 # router; adjust temp down 4°C
                 temp_C -= 4.0
             
-            temp_F = (1.8*temp_C)+32
+            temp_sample = {
+                'timestamp' : xbee_frame['_timestamp'],
+                'node_id'   : formatted_addr,
+                'temp_C'    : temp_C,
+                'temp_F'    : (1.8 * temp_C) + 32,
+            }
+            
+            # publish the sensor data
+            self.publish_sensor_data('temperature.' + formatted_addr, temp_sample)
+            
         
         # humidity = ((sample_to_mv(samples['adc-3']) * 108.2 / 33.2) / 5000.0 - 0.16) / 0.0062
         
         # print '%s sensor reading -- light: %d temp %.1fF/%.1fC' % (formatted_addr, light, temp_F, temp_C)
-        
-        try:
-            if temp_C != None:
-                self.dbc.execute(
-                    "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)",
-                    (
-                        time.mktime(now.timetuple()),
-                        formatted_addr,
-                        temp_C,
-                    )
-                )
-            
-            if light != None:
-                self.dbc.execute(
-                    "insert into light (ts_utc, node_id, light_val) values (?, ?, ?)",
-                    (
-                        time.mktime(now.timetuple()),
-                        formatted_addr,
-                        light,
-                    )
-                )
-        except:
-            self._logger.error("unable to insert record into database", exc_info = True)
-        
-        return True
     
     # }}}
 
-# }}}}
 
 def main():
+    import signal
+    import daemonizer
+    
+    import log_config, logging
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
     daemonizer.createDaemon()
+    log_config.init_logging(basedir + "/logs/xbee_lt.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/lt_sensor.log",
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
-    
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    # log_config.init_logging_stdout()
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    sc = LightTempConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:a5', '00:11:22:33:44:55:66:7d'])
+    pc = LightTempConsumerRabbit(('00:11:22:33:44:55:66:a5', '00:11:22:33:44:55:66:7d'))
     
     try:
-        sc.process_forever()
+        pc.process_forever()
     except:
         logging.error("unhandled exception", exc_info=True)
     finally:
-        sc.shutdown()
-        logging.shutdown()
+        pc.shutdown()
+        log_config.shutdown()
     
 
 

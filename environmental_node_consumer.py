@@ -4,9 +4,6 @@
 import sys, os
 import consumer
 import time
-import signal
-import logging, logging.handlers
-import daemonizer
 
 import SimpleXMLRPCServer, threading
 import struct
@@ -15,30 +12,25 @@ class Timeout(Exception):
     pass
 
 
-class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
+class EnvironmentalNodeConsumer(consumer.BaseConsumer):
     # {{{ __init__
-    def __init__(self, db_name, xbee_addresses = []):
-        consumer.DatabaseConsumer.__init__(self, db_name, xbee_addresses = xbee_addresses)
+    def __init__(self, addrs):
+        super(EnvironmentalNodeConsumer, self).__init__(addrs)
         
         # short-term storage for retrieved calibration data
         self.__calibration_data = {}
         self.__calibration_data_lock = threading.RLock()
     
+    
     # }}}
     
     # {{{ handle_packet
-    def handle_packet(self, frame):
+    def handle_packet(self, formatted_addr, frame):
         # {'id': 'zb_rx',
         #  'options': '\x01',
         #  'rf_data': 'T: 770.42 Cm: 375.14 RH:  42.88 Vcc: 3332 tempC:  19.04 tempF:  66.27\r\n',
         #  'source_addr': '\xda\xe0',
         #  'source_addr_long': '\x00\x13\xa2\x00@2\xdc\xdc'}
-        
-        now = self.now()
-        
-        if frame['id'] != 'zb_rx':
-            self._logger.debug("unhandled frame id %s", frame['id'])
-            return False
         
         # need to determine if this is regular sample data, or if it's a binary
         # response containing the current calibration data.  I wasn't very smart when
@@ -56,7 +48,7 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
                 handled_as_binary = True
                 
                 with self.__calibration_data_lock:
-                    self.__calibration_data[frame['source_addr_long']] = {
+                    self.__calibration_data[formatted_addr] = {
                         'capacitanceConvFactor': data[0],
                         'humiditySensitivity': data[1],
                         'temperatureCoefficient': data[2],
@@ -66,7 +58,7 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
                         'temperatureSensorCorrectionOffset': data[6],
                     }
                     
-                    self._logger.debug("found calibration data: " + str(self.__calibration_data[frame['source_addr_long']]))
+                    self._logger.debug("found calibration data: " + str(self.__calibration_data[formatted_addr]))
                 
             except struct.error:
                 pass
@@ -76,40 +68,24 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
             # resume standard sample handling
             sdata = frame['rf_data'].strip().split()
             
-            # self._logger.debug(sdata)
-            
             # Parse the sample
             # T: 778.21 Cm: 377.93 RH:  47.17 Vcc: 3342 tempC:  13.31 tempF:  55.96
             if sdata[0] == 'T:':
                 rel_humid = float(sdata[5])
                 temp_C = float(sdata[9])
                 
-                # self._logger.debug(str((time.mktime(now.timetuple()), rel_humid, temp_C)))
+                sensor_frame = {
+                    'timestamp' : frame['_timestamp'],
+                    'node_id'   : formatted_addr,
+                    'rel_humid' : rel_humid,
+                    'temp_C'    : temp_C,
+                }
                 
-                try:
-                    self.dbc.execute(
-                        "insert into humidity (ts_utc, node_id, rel_humid) values (?, ?, ?)",
-                        (
-                            time.mktime(now.timetuple()),
-                            self._format_addr(frame['source_addr_long']),
-                            rel_humid,
-                        )
-                    )
-                
-                    self.dbc.execute(
-                        "insert into temperature (ts_utc, node_id, temp_C) values (?, ?, ?)",
-                        (
-                            time.mktime(now.timetuple()),
-                            self._format_addr(frame['source_addr_long']),
-                            temp_C,
-                        )
-                    )
-                except:
-                    self._logger.error("unable to insert records to database", exc_info = True)
+                self.publish_sensor_data('temperature.' + formatted_addr, sensor_frame)
+                self.publish_sensor_data('humidity.' + formatted_addr, sensor_frame)
             else:
-                self._logger.error("bad data: %s", unicode(sdata, errors = 'replace'))
+                self._logger.error("bad data: %s", unicode(frame['rf_data'], errors = 'replace'))
         
-        return True
     
     # }}}
     
@@ -121,10 +97,8 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
         for d in body:
             checksum ^= ord(d)
         
-        #print packet_spec
         p = struct.pack(packet_spec, '*', len(body), body, checksum)
         
-        # print [c for c in p], [hex(ord(c)) for c in p]
         return p
     
     # }}}
@@ -132,8 +106,6 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
     # {{{ read_calibration_data
     # @param dest destination, formatted (xx:yy:zz:…)
     def read_calibration_data(self, dest):
-        dest = self._parse_addr(dest)
-        
         if not self._send_data(dest, self.__build_message('R')):
             raise Timeout("unable to send data")
         
@@ -151,32 +123,37 @@ class EnvironmentalNodeConsumer(consumer.DatabaseConsumer):
     # {{{ write_calibration_element
     def write_calibration_element(self):
         pass
+    
     # }}}
     
     # {{{ perform_calibration
     def perform_calibration(self):
         pass
+    
     # }}}
     
 
 
 def main():
+    import signal
+    import daemonizer
+    
+    import log_config, logging
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
     daemonizer.createDaemon()
+    log_config.init_logging(basedir + "/logs/env_node.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + "/logs/env_node.log",
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
-    
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
+    # log_config.init_logging_stdout()
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
-    c = EnvironmentalNodeConsumer(basedir + '/sensors.db', xbee_addresses = ['00:11:22:33:44:55:66:dc', '00:11:22:33:44:55:66:22'])
+    c = EnvironmentalNodeConsumer((
+        '00:11:22:33:44:55:66:dc',
+        '00:11:22:33:44:55:66:22'
+    ))
+    
     xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10102))
     
     try:
@@ -195,7 +172,7 @@ def main():
         logging.error("unhandled exception", exc_info=True)
     finally:
         c.shutdown()
-        logging.shutdown()
+        log_config.shutdown()
     
 
 

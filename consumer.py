@@ -1,19 +1,17 @@
 #!/usr/bin/env python2.6
 # -*- coding: utf-8 -*-
 
+# base class(es) for implementing packet consumers from the raw_xbee_packets exchange.
+
 import sys,os
-import socket
 
-import struct
-import XBeeProxy
-
-import datetime
+import pika
 
 import logging
-import logging.handlers
-import daemonizer
-import Queue
-import random
+import threading
+import uuid
+
+import cPickle as pickle
 
 class Disconnected(Exception):
     pass
@@ -25,32 +23,86 @@ class InvalidDestination(Exception):
 
 class BaseConsumer(object):
     # {{{ __init__
-    def __init__(self, xbee_addresses = [], socket_dest = ('localhost', 9999)):
+    def __init__(self, addrs = ('#')):
+        """
+        bindings is a tuple of <frame_type>.address strings
+        """
+        super(BaseConsumer, self).__init__()
+        
         self._logger = logging.getLogger(self.__class__.__name__)
         
-        self.__frame_id = chr(((random.randint(1, 255)) % 255) + 1)
-        self.__shutdown = False
+        self._xbee_addresses = addrs
+        self._connection_params = pika.ConnectionParameters(host='pepe')
         
-        # queue for status frames that aren't explicitly handled in handle_packet,
-        # so that __send_data can get to them.
-        self.__status_msg_queue = Queue.Queue(maxsize = 100)
+        # connection/channel for working with raw packets
+        self.__xb_frame_conn = self._create_broker_connection()
+        self.__xb_frame_chan = self.__xb_frame_conn.channel()
         
-        # queue for remote_at_response frames that aren't explicitly handled in
-        # handle_packet, so that _send_remote_at can get to them.
-        self.__remote_at_msg_queue = Queue.Queue(maxsize = 100)
+        self.declare_exchanges(self.__xb_frame_chan)
         
-        self.xbee_addresses = [self._parse_addr(xba) for xba in xbee_addresses]
+        # create new queue exclusively for us (channel is arbitrary)
+        self.__queue_name = self.__xb_frame_chan.queue_declare(exclusive = True).method.queue
         
-        # self.__socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.__socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # configure callback for all packets
+        self.__xb_frame_chan.basic_consume(self.__on_receive_packet,
+                                           queue = self.__queue_name,
+                                           no_ack = True)
         
-        ## this may only apply to TCP sockets...
-        self.__socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        # bind routing keys to queue
+        for addr in self._xbee_addresses:
+            self.__xb_frame_chan.queue_bind(exchange = 'raw_xbee_packets',
+                                            queue = self.__queue_name,
+                                            routing_key = '*.' + addr.lower())
         
-        self.__socket.connect(socket_dest)
-        self._logger.info("connected to %s", socket_dest)
+        # channel for transmitting packets
+        self.__rpc_conn = self._create_broker_connection()
+        self.__rpc_chan = self.__xb_frame_conn.channel()
         
-        self.xbee = XBeeProxy.XBeeProxy(self.__socket)
+        # channel and connection for publishing sensor data and events
+        self.__publisher_conn = self._create_broker_connection()
+        self.__publisher_chan = self.__xb_frame_conn.channel()
+        self.__publisher_chan_lock = threading.RLock()
+        
+        # queue for response frames that aren't explicitly handled in
+        # handle_packet, so that __rpc_send_message can get to them.
+        self.__rpc_reply_msgs = {}
+        self.__rpc_reply_msgs_lock = threading.RLock()
+        
+        # default; will be set again in process_forever
+        self.__main_thread_name = threading.currentThread().name
+    
+    # }}}
+    
+    # {{{ _create_broker_connection
+    def _create_broker_connection(self):
+        return pika.BlockingConnection(self._connection_params)
+    
+    # }}}
+    
+    # {{{ _serialize
+    def _serialize(self, data):
+        return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
+    
+    # }}}
+    
+    # {{{ _deserialize
+    def _deserialize(self, data):
+        return pickle.loads(data)
+    
+    # }}}
+    
+    # {{{ declare_exchanges
+    def declare_exchanges(self, channel):
+        """
+        declares required exchanges; sub-classes should extend.
+        
+        @todo move to config file (exchanges.ini) ?
+        """
+        self._logger.debug("declaring exchanges")
+        
+        channel.exchange_declare(exchange = 'raw_xbee_packets', type = 'topic')
+        channel.exchange_declare(exchange = 'sensor_data', type = 'topic')
+        channel.exchange_declare(exchange = 'events', type = 'topic')
     
     # }}}
     
@@ -75,224 +127,244 @@ class BaseConsumer(object):
     def _sample_to_mv(self, sample):
         """Converts a raw A/D sample to mV (uncalibrated)."""
         return sample * 1200.0 / 1023
-    # }}}
-    
-    # {{{ get_frame_id
-    def get_frame_id(self):
-        return self.__frame_id
     
     # }}}
     
-    # {{{ next_frame_id
-    def next_frame_id(self):
-        # increment frame_id but constrain to 1..255.  Seems to go
-        # 2,4,6,…254,1,3,5…255. Whatever.
-        self.__frame_id = chr(((ord(self.__frame_id) + 1) % 255) + 1)
+    # {{{ __rpc_send_message
+    def __rpc_send_message(self, dest, msg_body):
+        """dest is a formatted address"""
         
-        return self.get_frame_id()
+        assert self.__main_thread_name != threading.currentThread().name, \
+            "DEADLOCK: spawn a new thread"
+        
+        if dest not in self._xbee_addresses:
+            raise InvalidDestination("destination address %s is not configured for this consumer" % dest)
+        
+        corr_id = str(uuid.uuid4())
+        reply_received_event = threading.Event()
+        
+        with self.__rpc_reply_msgs_lock:
+            self.__rpc_reply_msgs[corr_id] = {
+                'event' : reply_received_event,
+                'response' : None,
+            }
+        
+        self.__rpc_chan.basic_publish(
+            exchange = '',
+            routing_key = 'xbee_tx',
+            properties = pika.BasicProperties(
+                reply_to = self.__queue_name,
+                correlation_id = corr_id,
+            ),
+            body = self._serialize(msg_body)
+        )
+        
+        # wait 30s for the reply to our call to be received
+        reply_received_event.wait(30)
+        
+        if not reply_received_event.is_set():
+            self._logger.warn("no reply received from %s with correlation %s", dest, corr_id)
+        
+        with self.__rpc_reply_msgs_lock:
+            frame = self.__rpc_reply_msgs.pop(corr_id)['response']
+        
+        return frame
     
     # }}}
     
     # {{{ _send_remote_at
-    # "remote_at":
-    #     [{'name':'id',              'len':1,        'default':'\x17'},
-    #      {'name':'frame_id',        'len':1,        'default':'\x00'},
-    #      # dest_addr_long is 8 bytes (64 bits), so use an unsigned long long
-    #      {'name':'dest_addr_long',  'len':8,        'default':struct.pack('>Q', 0)},
-    #      {'name':'dest_addr',       'len':2,        'default':'\xFF\xFE'},
-    #      {'name':'options',         'len':1,        'default':'\x02'},
-    #      {'name':'command',         'len':2,        'default':None},
-    #      {'name':'parameter',       'len':None,     'default':None}],
     def _send_remote_at(self, dest, command, param_val = None):
-        if dest not in self.xbee_addresses:
-            raise InvalidDestination("destination address %s is not configured for this consumer" % self._format_addr(dest))
+        frame = self.__rpc_send_message(
+            dest,
+            {
+                'method' : 'send_remote_at',
+                'dest' : dest,
+                'command' : command,
+                'param_val' : param_val,
+            }
+        )
         
         success = False
         
-        frame_id = self.next_frame_id()
-        
-        self.xbee.remote_at(frame_id = frame_id,
-                            dest_addr_long = dest,
-                            command = command,
-                            parameter = param_val)
-        
-        while True:
-            try:
-                frame = self.__remote_at_msg_queue.get(True, 1)
-                # frame is guaranteed to have id == remote_at_response
-                self._logger.debug("remote_at_response: " + unicode(str(frame), errors='replace'))
-                
-                if (frame['frame_id'] == frame_id):
-                    if frame['status'] == '\x00':
-                        # success!
-                        success = True
-                        self._logger.debug("successfully sent remote AT command")
-                    elif frame['status'] == '\x01':
-                        # error
-                        self._logger.error("unspecified error sending remote AT command")
-                    elif frame['status'] == '\x02':
-                        # invalid command
-                        self._logger.error("invalid command sending remote AT command")
-                    elif frame['status'] == '\x03':
-                        # invalid parameter
-                        self._logger.error("invalid parameter sending remote AT command")
-                    elif frame['status'] == '\x04':
-                        # remote command transmission failed
-                        self._logger.error("remote AT command transmission failed")
-                    
-                    break
-            except Queue.Empty:
-                pass
+        if frame != None:
+            # frame is guaranteed to have id == remote_at_response
+            
+            if frame['status'] == '\x00':
+                # success!
+                success = True
+                self._logger.debug("successfully sent remote AT command")
+            elif frame['status'] == '\x01':
+                # error
+                self._logger.error("unspecified error sending remote AT command")
+            elif frame['status'] == '\x02':
+                # invalid command
+                self._logger.error("invalid command sending remote AT command")
+            elif frame['status'] == '\x03':
+                # invalid parameter
+                self._logger.error("invalid parameter sending remote AT command")
+            elif frame['status'] == '\x04':
+                # remote command transmission failed
+                self._logger.error("remote AT command transmission failed")
         
         return success
-        
+    
     # }}}
     
     # {{{ _send_data
-    # wait_for_ack is a kludge.  when the general event-driven process and the 
-    # _send_data are called in the same thread, the __status_msg_queue is 
-    # never populated.  sending requires its own thread, I think.
-    def _send_data(self, dest, data, wait_for_ack = True):
-        if dest not in self.xbee_addresses:
-            raise InvalidDestination("destination address %s is not configured for this consumer" % self._format_addr(dest))
+    def _send_data(self, dest, data):
+        frame = self.__rpc_send_message(
+            dest,
+            {
+                'method' : 'send_data',
+                'dest' : dest,
+                'data' : data,
+            }
+        )
         
         success = False
-        
-        frame_id = self.next_frame_id()
-        
-        self.xbee.zb_tx_request(frame_id = frame_id, dest_addr_long = dest, data = data)
-        
-        ack_received = False
-        while wait_for_ack and (not ack_received):
-            try:
-                frame = self.__status_msg_queue.get(True, 1)
-                # frame is guaranteed to have id == zb_tx_status
                 
-                # print frame
-                if (frame['frame_id'] == frame_id):
-                    if frame['delivery_status'] == '\x00':
-                        # success!
-                        success = True
-                        self._logger.debug("sent data with %d retries", ord(frame['retries']))
-                    else:
-                        self._logger.error("send failed after %d retries with status 0x%2X", ord(frame['retries']), ord(frame['delivery_status']))
-                    
-                    ack_received = True
-            except Queue.Empty:
-                # self._logger.debug("status message queue is empty")
-                pass
+        if frame != None:
+            # frame is guaranteed to have id == zb_tx_status
             
+            if frame['delivery_status'] == '\x00':
+                # success!
+                success = True
+                self._logger.debug("sent data with %d retries", ord(frame['retries']))
+            else:
+                self._logger.warn(
+                    "send failed after %d retries with status 0x%2X",
+                    ord(frame['retries']), ord(frame['delivery_status'])
+                )
+        
         return success
+    
+    # }}}
+    
+    # {{{ process_forever
+    def process_forever(self):
+        self.__shutdown_event = threading.Event()
+        
+        t = threading.Thread(target = self.__xb_frame_chan.start_consuming, name = "proc_4evr")
+        # t.daemon = True
+        
+        self.__main_thread_name = t.name
+        
+        t.start()
+        
+        while True:
+            if not t.is_alive():
+                self._logger.critical("thread %s died", t.name)
+                break
+            
+            if self.__shutdown_event.is_set():
+                self._logger.info("shutdown event set")
+                break
+            else:
+                try:
+                    self.__shutdown_event.wait(0.5)
+                except KeyboardInterrupt:
+                    self.__shutdown_event.set()
+                
+            
+        
+        with self.__publisher_chan_lock:
+            self.__xb_frame_chan.stop_consuming()
+            
+            self.__xb_frame_conn.close()
+            self.__rpc_conn.close()
+            self.__publisher_conn.close()
     
     # }}}
     
     # {{{ shutdown
     def shutdown(self):
-        self.__shutdown = True
-        self.__socket.shutdown(socket.SHUT_RDWR)
-        self.__socket.close()
+        self._logger.warn("shutting down")
         
-        self._logger.info("shutdown complete")
+        self.__shutdown_event.set()
+        
     # }}}
     
-    # {{{ process_forever
-    def process_forever(self):
-        while not self.__shutdown:
-            try:
-                frame = self.xbee.wait_read_frame()
-                
-                src_addr = None
-                if 'source_addr_long' in frame:
-                    src_addr = frame['source_addr_long']
-                
-                _do_process = True
-                if self.xbee_addresses:
-                    if (src_addr != None) and (src_addr not in self.xbee_addresses):
-                        _do_process = False
-                
-                # @todo fix filtering of status frames; looks like they're stored for every consumer
-                if _do_process:
-                    if not self.handle_packet(frame):
-                        # self._logger.debug("unhandled frame: " + unicode(str(frame), errors='replace'))
-                        
-                        if frame['id'] == 'zb_tx_status':
-                            # prune queue while full
-                            while self.__status_msg_queue.full():
-                                self._logger.debug("status message queue full; removing item")
-                                self.__status_msg_queue.get()
-                            
-                            self.__status_msg_queue.put(frame)
-                        elif frame['id'] == 'remote_at_response':
-                            # prune queue while full
-                            while self.__remote_at_msg_queue.full():
-                                self._logger.debug("remote AT message queue full; removing item")
-                                self.__remote_at_msg_queue.get()
-                                
-                            self.__remote_at_msg_queue.put(frame)
-                        
+    # {{{ __on_receive_packet
+    def __on_receive_packet(self, ch, method, props, body):
+        self._logger.debug("received packet from exchange '%s' with routing key %s and correlation_id %s",
+                           method.exchange, method.routing_key, props.correlation_id)
+        
+        frame = self._deserialize(body)
+        formatted_addr = method.routing_key.split('.')[1]
+        
+        # we get both standard "raw" frames AND RPC replies in this handler
+        
+        # differentiate replies from raw packets
+        if (props.correlation_id != None) and (method.routing_key == self.__queue_name):
+            # this is a reply
+            with self.__rpc_reply_msgs_lock:
+                if props.correlation_id in self.__rpc_reply_msgs:
+                    self.__rpc_reply_msgs[props.correlation_id]['response'] = frame
+                    self.__rpc_reply_msgs[props.correlation_id]['event'].set()
                 else:
-                    # no match on address; filtered.
-                    pass
-                
-            except XBeeProxy.PeerDiedError:
-                self._logger.critical("connection to server went away", exc_info = True)
-                self.shutdown()
+                    self._logger.error("got %s reply for unknown correlation %s: %s",
+                                       frame['id'], props.correlation_id, frame)
+            
+        else:
+            # standard raw packet; guaranteed  to have a routing_key of the form
+            # <frame id>.<address>, where the address is one we're subscribed to
+            try:
+                self.handle_packet(formatted_addr, frame)
             except:
                 self._logger.critical("exception handling packet", exc_info = True)
+            
         
     # }}}
+    
     
     # {{{ handle_packet
-    def handle_packet(self, packet):
+    def handle_packet(self, formatted_addr, packet):
         ## for testing only; subclasses should override
         self._logger.debug(unicode(str(packet), errors='replace'))
-        return True
+    
     # }}}
     
-    # {{{ now
-    def now(self):
-        return datetime.datetime.now()
+    # {{{ publish_sensor_data
+    def publish_sensor_data(self, routing_key, body):
+        with self.__publisher_chan_lock:
+            self.__publisher_chan.basic_publish(
+                exchange = 'sensor_data',
+                routing_key = routing_key,
+                body = self._serialize(body)
+            )
+    
     # }}}
     
-
-
-class DatabaseConsumer(BaseConsumer):
-    # {{{ __init__
-    def __init__(self, db_name, xbee_addresses = [], socket_dest = ('localhost', 9999)):
-        import sqlite3
-        
-        self.dbc = sqlite3.connect(db_name,
-                                   isolation_level = None,
-                                   timeout = 5)
-        
-        BaseConsumer.__init__(self, xbee_addresses, socket_dest)
-    # }}}
+    # {{{ publish_event
+    def publish_event(self, routing_key, body):
+        with self.__publisher_chan_lock:
+            self.__publisher_chan.basic_publish(
+                exchange = 'events',
+                routing_key = routing_key,
+                body = self._serialize(body)
+            )
     
-    # {{{ process_forever
-    def process_forever(self):
-        BaseConsumer.process_forever(self)
-        self.dbc.close()
     # }}}
     
 
 
 if __name__ == '__main__':
+    import daemonizer
+    
+    import log_config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    daemonizer.createDaemon()
+    # daemonizer.createDaemon()
+    # log_config.init_logging(basedir + "/logs/base_consumer.log")
     
-    handler = logging.handlers.RotatingFileHandler(basedir + '/logs/consumer.log',
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
+    log_config.init_logging_stdout()
     
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.DEBUG)
+    bc = BaseConsumer()
     
     try:
-        BaseConsumer().process_forever()
+        bc.process_forever()
     finally:
-        BaseConsumer().shutdown()
-        logging.shutdown()
+        bc.shutdown()
+        log_config.shutdown()
 
