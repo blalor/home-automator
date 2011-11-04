@@ -46,6 +46,8 @@ class FurnaceConsumer(consumer.BaseConsumer):
             if self.__calc_checksum(data[3:-1]) == ord(data[-1]):
                 sample = struct.unpack("<BBBH?HB", data)
                 
+                self._logger.debug("sample: %s", sample)
+                
                 zone_state = self.zone_states[sample[3]]
                 powered = sample[4]
                 self.__timer_remaining = sample[5]
@@ -122,14 +124,14 @@ def main():
     import threading
     import daemonizer
     
-    import log_config
+    import log_config, logging
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # daemonizer.createDaemon()
-    # log_config.init_logging(basedir + "/logs/furnace.log")
+    daemonizer.createDaemon()
+    log_config.init_logging(basedir + "/logs/furnace.log")
     
-    log_config.init_logging_stdout()
+    # log_config.init_logging_stdout()
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
@@ -148,6 +150,8 @@ def main():
         xrs_thread.start()
         
         fc.process_forever()
+    except KeyboardInterrupt:
+        pass
     except:
         logging.error("unhandled exception", exc_info=True)
     finally:

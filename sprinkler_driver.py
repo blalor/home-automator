@@ -92,7 +92,7 @@ def main():
     import threading
     import daemonizer
     
-    import log_config
+    import log_config, logging
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     

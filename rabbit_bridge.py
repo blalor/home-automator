@@ -15,7 +15,7 @@ import datetime
 import pika
 import consumer
 
-import logging, logging.handlers
+import logging
 import signal, threading
 
 import daemonizer
@@ -40,21 +40,19 @@ class RabbitBridge(consumer.BaseConsumer):
         self.__correlations = {}
         self.__correlation_lock = threading.RLock()
         
-        self.__connection_lock = threading.RLock()
+        conn_params = pika.ConnectionParameters(host='pepe')
         
-        self._connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host='pepe')
-        )
-        
-        # channel for raw XBee packets
+        # connection/channel for raw XBee packets
+        self._connection = pika.BlockingConnection(conn_params)
         self._pkt_channel = self._connection.channel()
         
         # create the exchange, if necessary
         self._pkt_channel.exchange_declare(exchange = 'raw_xbee_packets',
                                            type = 'topic')
         
-        # channel for receiving transmission packets
-        self._rpc_channel = self._connection.channel()
+        # connection/channel for receiving transmission packets
+        self._rpc_connection = pika.BlockingConnection(conn_params)
+        self._rpc_channel = self._rpc_connection.channel()
        
         # queue for receiving frames to be sent to XBee devices
         self._rpc_channel.queue_declare(queue = 'xbee_tx')
@@ -75,9 +73,8 @@ class RabbitBridge(consumer.BaseConsumer):
         except:
             self._logger.error("unable to load pickle")
             
-            with self.__connection_lock:
-                ch.basic_ack(delivery_tag = method.delivery_tag)
-            
+            ## dedicated channel/connection for this callback
+            ch.basic_ack(delivery_tag = method.delivery_tag)
             return
         
         self._logger.debug(
@@ -85,16 +82,11 @@ class RabbitBridge(consumer.BaseConsumer):
             req['method'], req['dest'], props.correlation_id
         )
         
-        
         # maintain relationship of correlation IDs, frame IDs, and destination addresses
         frame_id = self.next_frame_id()
-        response_received_event = threading.Event()
         
         with self.__correlation_lock:
-            self.__correlations[frame_id] = {
-                'response' : None,
-                'event' : response_received_event,
-            }
+            self.__correlations[frame_id] = props
         
         if req['method'] == 'send_remote_at':
             # {'method' : 'send_remote_at',
@@ -119,36 +111,9 @@ class RabbitBridge(consumer.BaseConsumer):
             
         
         # ack that the message's been handled
-        with self.__connection_lock:
-            ch.basic_ack(delivery_tag = method.delivery_tag)
+        ch.basic_ack(delivery_tag = method.delivery_tag)
         
         self._logger.debug("XBee command sent and message ack'd")
-        
-        # wait for response for 10s
-        response_received_event.wait(10)
-        
-        self._logger.debug("done waiting for event")
-        
-        if not response_received_event.is_set():
-            self._logger.warn("no response received for %s", props.correlation_id)
-        
-        # ok, we should now have the result
-        with self.__correlation_lock:
-            resp_frame = self.__correlations.pop(frame_id)['response']
-        
-        self._logger.debug("response frame: %s", resp_frame)
-        
-        with self.__connection_lock:
-            ch.basic_publish(
-                exchange = '',
-                routing_key = props.reply_to,
-                properties = pika.BasicProperties(
-                    correlation_id = props.correlation_id
-                ),
-                body = serialize(resp_frame)
-            )
-        
-    
     
     # }}}
     
@@ -164,22 +129,30 @@ class RabbitBridge(consumer.BaseConsumer):
         
         # pprint(frame)
         
-        correlation_data = None
-        frame_addr = 'unknown'
-        
         if 'frame_id' in frame:
             # this is a response of some kind
             # self._logger.debug("found reply of type %s with frame_id %02x", frame['id'], ord(frame['frame_id']))
             
             with self.__correlation_lock:
                 if frame['frame_id'] in self.__correlations:
-                    # hand off the frame to the waiting handler
-                    self.__correlations[frame['frame_id']]['response'] = frame
-                    self.__correlations[frame['frame_id']]['event'].set()
+                    props = self.__correlations.pop(frame['frame_id'])
+                    
+                    self._pkt_channel.basic_publish(
+                        exchange = '',
+                        routing_key = props.reply_to,
+                        properties = pika.BasicProperties(
+                            correlation_id = props.correlation_id
+                        ),
+                        body = serialize(frame)
+                    )
+                    
                 else:
                     # self._logger.error("got response to a command I didn't send: %s", str(frame))
                     pass
+        
         else:
+            frame_addr = 'unknown'
+            
             if 'source_addr' in frame:
                 frame_addr = self._format_addr(frame['source_addr'])
                 
@@ -191,12 +164,11 @@ class RabbitBridge(consumer.BaseConsumer):
             
             self._logger.debug("routing_key: %s", routing_key)
             
-            with self.__connection_lock:
-                self._pkt_channel.basic_publish(
-                    exchange = 'raw_xbee_packets',
-                    routing_key = routing_key,
-                    body = serialize(frame)
-                )
+            self._pkt_channel.basic_publish(
+                exchange = 'raw_xbee_packets',
+                routing_key = routing_key,
+                body = serialize(frame)
+            )
         
         return True
     

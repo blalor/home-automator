@@ -118,14 +118,14 @@ def main():
     import signal
     import daemonizer
     
-    import log_config
+    import log_config, logging
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # daemonizer.createDaemon()
-    # log_config.init_logging(basedir + "/logs/voltometer.log")
+    daemonizer.createDaemon()
+    log_config.init_logging(basedir + "/logs/voltometer.log")
     
-    log_config.init_logging_stdout()
+    # log_config.init_logging_stdout()
     
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     

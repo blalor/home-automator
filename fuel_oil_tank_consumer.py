@@ -3,9 +3,6 @@
 
 import sys, os
 import rabbit_consumer as consumer
-import logging, logging.handlers
-import signal
-import daemonizer
 import struct
 
 class FuelOilTankConsumer(consumer.BaseConsumer):
@@ -36,7 +33,9 @@ class FuelOilTankConsumer(consumer.BaseConsumer):
 
 
 def main():
-    import log_config
+    import log_config, logging
+    import signal
+    import daemonizer
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     

@@ -31,7 +31,7 @@ class DBLogger(object):
     )
     
     # {{{ __init__
-    def __init__(self, host):
+    def __init__(self, host, db_file):
         super(DBLogger, self).__init__()
         
         self._logger = logging.getLogger(self.__class__.__name__)
@@ -40,7 +40,8 @@ class DBLogger(object):
         self.connection = pika.SelectConnection(parameters, self.on_connected)
         
         self.channel = None
-        self.dbc = sqlite3.connect(os.path.abspath(os.path.dirname(__file__)) + '/sensors.db',
+        
+        self.dbc = sqlite3.connect(db_file,
                                    isolation_level = None,
                                    timeout = 5)
         
@@ -50,14 +51,14 @@ class DBLogger(object):
     # }}}
     
     def on_connected(self, conn):
-        self._logger.debug("connection opened")
+        self._logger.info("connection opened")
         self.connection.channel(self.on_channel_open)
     
     
     def on_channel_open(self, chan):
         self.channel = chan
         
-        self._logger.debug("channel opened: %s", self.channel)
+        self._logger.info("channel opened: %s", self.channel)
         
         # create new queue 
         self.channel.queue_declare(queue = 'db_inserts', callback = self.on_queue_declared)
@@ -204,19 +205,18 @@ def main():
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # daemonizer.createDaemon()
-    # log_config.init_logging(basedir + "/logs/db_logger.log")
+    daemonizer.createDaemon()
+    log_config.init_logging(basedir + "/logs/db_logger.log")
     
-    log_config.init_logging_stdout()
-    
-    dbl = DBLogger('pepe')
+    # log_config.init_logging_stdout()
     
     try:
+        dbl = DBLogger('pepe', basedir + '/sensors.db')
         dbl.process_forever()
     except KeyboardInterrupt:
         pass
     except:
-        logging.getLogger().critical("uncaught exception", exc_info = True)
+        logging.critical("uncaught exception", exc_info = True)
     finally:
         log_config.shutdown()
     

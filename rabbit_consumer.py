@@ -56,7 +56,7 @@ class BaseConsumer(object):
         
         # channel for transmitting packets
         self.__rpc_conn = self._create_broker_connection()
-        self.__rpc_channel = self.__xb_frame_conn.channel()
+        self.__rpc_chan = self.__xb_frame_conn.channel()
         
         # channel and connection for publishing sensor data and events
         self.__publisher_conn = self._create_broker_connection()
@@ -149,7 +149,7 @@ class BaseConsumer(object):
                 'response' : None,
             }
         
-        self.__rpc_channel.basic_publish(
+        self.__rpc_chan.basic_publish(
             exchange = '',
             routing_key = 'xbee_tx',
             properties = pika.BasicProperties(
@@ -231,7 +231,7 @@ class BaseConsumer(object):
                 success = True
                 self._logger.debug("sent data with %d retries", ord(frame['retries']))
             else:
-                self._logger.error(
+                self._logger.warn(
                     "send failed after %d retries with status 0x%2X",
                     ord(frame['retries']), ord(frame['delivery_status'])
                 )
@@ -268,7 +268,8 @@ class BaseConsumer(object):
             
         
         with self.__publisher_chan_lock:
-            self._channel.stop_consuming()
+            self.__xb_frame_chan.stop_consuming()
+            
             self.__xb_frame_conn.close()
             self.__rpc_conn.close()
             self.__publisher_conn.close()
@@ -277,7 +278,7 @@ class BaseConsumer(object):
     
     # {{{ shutdown
     def shutdown(self):
-        self._logger.info("shutting down")
+        self._logger.warn("shutting down")
         
         self.__shutdown_event.set()
         
@@ -289,7 +290,7 @@ class BaseConsumer(object):
                            method.exchange, method.routing_key, props.correlation_id)
         
         frame = self._deserialize(body)
-        formatted_addr = method.routing_key.split('.')[0]
+        formatted_addr = method.routing_key.split('.')[1]
         
         # we get both standard "raw" frames AND RPC replies in this handler
         
