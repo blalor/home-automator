@@ -5,7 +5,7 @@
 
 import sys, os
 
-import rabbit_consumer as consumer
+import consumer
 
 class LightTempConsumerRabbit(consumer.BaseConsumer):
     # {{{ handle_packet

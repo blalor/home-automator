@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys, os
-import rabbit_consumer as consumer
+import consumer
 import struct
 
 class FuelOilTankConsumer(consumer.BaseConsumer):

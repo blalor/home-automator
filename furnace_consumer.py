@@ -5,7 +5,7 @@ import sys, os
 
 import struct
 
-import rabbit_consumer as consumer
+import consumer
 import SimpleXMLRPCServer
 
 class FurnaceConsumer(consumer.BaseConsumer):

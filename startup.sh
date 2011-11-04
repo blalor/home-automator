@@ -2,7 +2,6 @@
 
 cd $(dirname $0)
 ./dispatcher.py /dev/ttyUSB0 115200
-sleep 5
 ./db_logging_receiver.py
 ./environmental_node_consumer.py
 ./furnace_consumer.py

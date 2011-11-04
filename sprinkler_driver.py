@@ -3,7 +3,7 @@
 
 import sys, os
 
-import rabbit_consumer as consumer
+import consumer
 import SimpleXMLRPCServer
 
 class InvalidSprinkler(Exception):

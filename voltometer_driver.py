@@ -8,7 +8,7 @@ import threading
 
 import struct
 
-import rabbit_consumer as consumer
+import consumer
 import SimpleXMLRPCServer
 
 def calc_checksum(data):

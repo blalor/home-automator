@@ -4,7 +4,7 @@
 # consume raw frames and produce data frames
 
 import sys, os
-import rabbit_consumer as consumer
+import consumer
 
 class PowerConsumer(consumer.BaseConsumer):
     def __init__(self, addr):
