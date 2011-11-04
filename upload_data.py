@@ -131,7 +131,7 @@ def main():
                 if result != None:
                     last_uploaded_rec = int(result)
                 else:
-                    log.error("no last_uploaded_rec!")
+                    log.error("no last_uploaded_rec for table %s!", table_name)
                 
                 ## delete rows from source table
                 conn.execute(
