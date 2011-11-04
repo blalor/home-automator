@@ -285,10 +285,10 @@ def main():
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     
-    # daemonizer.createDaemon()
-    # log_config.init_logging(basedir + "/logs/dispatcher.log")
+    daemonizer.createDaemon()
+    log_config.init_logging(basedir + "/logs/dispatcher.log")
     
-    log_config.init_logging_stdout()
+    # log_config.init_logging_stdout()
     
     dispatcher = XBeeDispatcher(
         broker_host = 'pepe',
