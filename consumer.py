@@ -32,37 +32,7 @@ class BaseConsumer(object):
         self._logger = logging.getLogger(self.__class__.__name__)
         
         self._xbee_addresses = addrs
-        self._connection_params = pika.ConnectionParameters(host='pepe')
-        
-        # connection/channel for working with raw packets
-        self.__xb_frame_conn = self._create_broker_connection()
-        self.__xb_frame_chan = self.__xb_frame_conn.channel()
-        
-        self.declare_exchanges(self.__xb_frame_chan)
-        
-        # create new queue exclusively for us (channel is arbitrary)
-        self.__queue_name = self.__xb_frame_chan.queue_declare(exclusive = True).method.queue
-        
-        # configure callback for all packets
-        self.__xb_frame_chan.basic_consume(self.__on_receive_packet,
-                                           queue = self.__queue_name,
-                                           no_ack = True)
-        
-        # bind routing keys to queue
-        for addr in self._xbee_addresses:
-            self.__xb_frame_chan.queue_bind(exchange = 'raw_xbee_packets',
-                                            queue = self.__queue_name,
-                                            routing_key = '*.' + addr.lower())
-        
-        # channel for transmitting packets
-        self.__rpc_conn = self._create_broker_connection()
-        self.__rpc_chan = self.__rpc_conn.channel()
-        self.__rpc_chan_lock = threading.RLock()
-        
-        # channel and connection for publishing sensor data and events
-        self.__publisher_conn = self._create_broker_connection()
-        self.__publisher_chan = self.__xb_frame_conn.channel()
-        self.__publisher_chan_lock = threading.RLock()
+        self._connection_params = pika.ConnectionParameters(host='localhost')
         
         # queue for response frames that aren't explicitly handled in
         # handle_packet, so that __rpc_send_message can get to them.
@@ -242,15 +212,51 @@ class BaseConsumer(object):
     
     # }}}
     
+    # {{{ __run_thread
+    def __run_thread(self):
+        self.__main_thread_name = threading.currentThread().name
+        
+        # connection/channel for working with raw packets
+        self.__xb_frame_conn = self._create_broker_connection()
+        self.__xb_frame_chan = self.__xb_frame_conn.channel()
+        
+        self.declare_exchanges(self.__xb_frame_chan)
+        
+        # create new queue exclusively for us (channel is arbitrary)
+        self.__queue_name = self.__xb_frame_chan.queue_declare(exclusive = True).method.queue
+        
+        # configure callback for all packets
+        self.__xb_frame_chan.basic_consume(self.__on_receive_packet,
+                                           queue = self.__queue_name,
+                                           no_ack = True)
+        
+        # bind routing keys to queue
+        for addr in self._xbee_addresses:
+            self.__xb_frame_chan.queue_bind(exchange = 'raw_xbee_packets',
+                                            queue = self.__queue_name,
+                                            routing_key = '*.' + addr.lower())
+        
+        
+        # channel for transmitting packets
+        self.__rpc_conn = self._create_broker_connection()
+        self.__rpc_chan = self.__rpc_conn.channel()
+        self.__rpc_chan_lock = threading.RLock()
+        
+        # channel and connection for publishing sensor data and events
+        self.__publisher_conn = self._create_broker_connection()
+        self.__publisher_chan = self.__xb_frame_conn.channel()
+        self.__publisher_chan_lock = threading.RLock()
+        
+        self.__xb_frame_chan.start_consuming()
+        
+    # }}}
+    
     # {{{ process_forever
     def process_forever(self):
         self.__shutdown_event = threading.Event()
         
-        t = threading.Thread(target = self.__xb_frame_chan.start_consuming, name = "proc_4evr")
+        t = threading.Thread(target = self.__run_thread, name = "proc_4evr")
         # t.daemon = True
-        
-        self.__main_thread_name = t.name
-        
         t.start()
         
         while True:
@@ -292,7 +298,6 @@ class BaseConsumer(object):
                            method.exchange, method.routing_key, props.correlation_id)
         
         frame = self._deserialize(body)
-        formatted_addr = method.routing_key.split('.')[1]
         
         # we get both standard "raw" frames AND RPC replies in this handler
         
@@ -310,6 +315,8 @@ class BaseConsumer(object):
         else:
             # standard raw packet; guaranteed  to have a routing_key of the form
             # <frame id>.<address>, where the address is one we're subscribed to
+            formatted_addr = method.routing_key.split('.')[1]
+            
             try:
                 self.handle_packet(formatted_addr, frame)
             except:
