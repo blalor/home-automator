@@ -11,7 +11,7 @@ import sys
 import os
 
 import pika
-import json
+import cPickle as pickle
 
 from pprint import pprint
 
@@ -44,7 +44,7 @@ class Listener(object):
     
     # {{{ handle_packet
     def handle_packet(self, channel, method, properties, body):
-        pprint((method, properties, json.loads(body)))
+        pprint((method, properties, pickle.loads(body)))
     
     # }}}
     

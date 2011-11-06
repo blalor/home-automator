@@ -13,7 +13,6 @@ import Queue
 import uuid
 
 import cPickle as pickle
-import json
 
 class Disconnected(Exception):
     pass
@@ -583,7 +582,7 @@ class BaseConsumer(object):
             self.__publisher_chan.basic_publish(
                 exchange = 'sensor_data',
                 routing_key = routing_key,
-                body = json.dumps(body)
+                body = serialize(body)
             )
     
     # }}}
@@ -594,7 +593,7 @@ class BaseConsumer(object):
             self.__publisher_chan.basic_publish(
                 exchange = 'events',
                 routing_key = routing_key,
-                body = json.dumps(body)
+                body = serialize(body)
             )
     
     # }}}
