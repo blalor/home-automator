@@ -9,7 +9,6 @@ import threading
 import struct
 
 import consumer
-import SimpleXMLRPCServer
 
 def calc_checksum(data):
     chksum = len(data)
@@ -44,6 +43,9 @@ class VoltometerDriver(consumer.BaseConsumer):
         self.voltometer_addr = voltometer_addr
         
         super(VoltometerDriver, self).__init__([self.voltometer_addr])
+        
+        self._register_rpc_function('voltometer', self.set_light)
+        self._register_rpc_function('voltometer', self.set_boost)
     
     # }}}
     
@@ -152,26 +154,15 @@ def main():
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
     vd = VoltometerDriver('00:11:22:33:44:55:66:e2')
-    xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10104))
     
     try:
-        # fire up XMLRPCServer
-        xrs.register_introspection_functions()
-        xrs.register_function(vd.set_light, 'set_light')
-        xrs.register_function(vd.set_boost, 'set_boost')
-        
-        xrs_thread = threading.Thread(target = xrs.serve_forever)
-        xrs_thread.daemon = True
-        xrs_thread.start()
-        
         vd.process_forever()
-        
+    
     except:
         logging.fatal("something bad happened", exc_info = True)
         
     finally:
         vd.shutdown()
-        xrs.shutdown()
         log_config.shutdown()
     
 

@@ -6,7 +6,6 @@ import sys, os
 import struct
 
 import consumer
-import SimpleXMLRPCServer
 
 class FurnaceConsumer(consumer.BaseConsumer):
     zone_states = {
@@ -21,6 +20,11 @@ class FurnaceConsumer(consumer.BaseConsumer):
         self.__timer_remaining = None
         
         super(FurnaceConsumer, self).__init__([self.__xbee_address])
+        
+        self._register_rpc_function('furnace', self.start_timer)
+        self._register_rpc_function('furnace', self.cancel_timer)
+        self._register_rpc_function('furnace', self.get_time_remaining)
+        
     
     # }}}
     
@@ -121,7 +125,6 @@ class FurnaceConsumer(consumer.BaseConsumer):
 
 def main():
     import signal
-    import threading
     import daemonizer
     
     import log_config, logging
@@ -136,19 +139,8 @@ def main():
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
     fc = FurnaceConsumer('00:11:22:33:44:55:66:4d')
-    xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10101))
     
     try:
-        # fire up XMLRPCServer
-        xrs.register_introspection_functions()
-        xrs.register_function(fc.start_timer, 'start_timer')
-        xrs.register_function(fc.cancel_timer, 'cancel_timer')
-        xrs.register_function(fc.get_time_remaining, 'get_time_remaining')
-        
-        xrs_thread = threading.Thread(target = xrs.serve_forever)
-        xrs_thread.daemon = True
-        xrs_thread.start()
-        
         fc.process_forever()
     except KeyboardInterrupt:
         pass
@@ -156,7 +148,6 @@ def main():
         logging.error("unhandled exception", exc_info=True)
     finally:
         fc.shutdown()
-        xrs.shutdown()
         log_config.shutdown()
     
 

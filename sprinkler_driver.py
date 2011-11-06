@@ -2,9 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import sys, os
-
 import consumer
-import SimpleXMLRPCServer
 
 class InvalidSprinkler(Exception):
     pass
@@ -28,6 +26,9 @@ class SprinklerConsumer(consumer.BaseConsumer):
         
         super(SprinklerConsumer, self).__init__([self.xbee_address])
         
+        self._register_rpc_function('sprinkler', self.activate_sprinkler)
+        self._register_rpc_function('sprinkler', self.deactivate_sprinkler)
+        self._register_rpc_function('sprinkler', self.sprinkler_active)
     
     # }}}
     
@@ -84,12 +85,10 @@ class SprinklerConsumer(consumer.BaseConsumer):
         return self.__sprinkler_active[sprinkler_id]
     
     # }}}
-    
 
 
 def main():
     import signal
-    import threading
     import daemonizer
     
     import log_config, logging
@@ -102,25 +101,13 @@ def main():
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     
     sc = SprinklerConsumer('00:11:22:33:44:55:66:1d')
-    xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10103))
     
     try:
-        # fire up XMLRPCServer
-        xrs.register_introspection_functions()
-        xrs.register_function(sc.activate_sprinkler, 'activate_sprinkler')
-        xrs.register_function(sc.deactivate_sprinkler, 'deactivate_sprinkler')
-        xrs.register_function(sc.sprinkler_active, 'sprinkler_active')
-        
-        xrs_thread = threading.Thread(target = xrs.serve_forever)
-        xrs_thread.daemon = True
-        xrs_thread.start()
-        
         sc.process_forever()
     except:
         logging.error("unhandled exception", exc_info=True)
     finally:
         sc.shutdown()
-        xrs.shutdown()
         log_config.shutdown()
     
 

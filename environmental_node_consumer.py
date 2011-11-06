@@ -5,7 +5,7 @@ import sys, os
 import consumer
 import time
 
-import SimpleXMLRPCServer, threading
+import threading
 import struct
 
 class Timeout(Exception):
@@ -16,6 +16,10 @@ class EnvironmentalNodeConsumer(consumer.BaseConsumer):
     # {{{ __init__
     def __init__(self, addrs):
         super(EnvironmentalNodeConsumer, self).__init__(addrs)
+        
+        self._register_rpc_function('environmental_node', self.read_calibration_data)
+        # self._register_rpc_function('environmental_node', self.write_calibration_element)
+        # self._register_rpc_function('environmental_node', self.perform_calibration)
         
         # short-term storage for retrieved calibration data
         self.__calibration_data = {}
@@ -154,19 +158,7 @@ def main():
         '00:11:22:33:44:55:66:22'
     ))
     
-    xrs = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 10102))
-    
     try:
-        # fire up XMLRPCServer
-        xrs.register_introspection_functions()
-        xrs.register_function(c.read_calibration_data, 'read_calibration_data')
-        # xrs.register_function(c.write_calibration_element, 'write_calibration_element')
-        # xrs.register_function(c.perform_calibration, 'perform_calibration')
-        
-        xrs_thread = threading.Thread(target = xrs.serve_forever)
-        xrs_thread.daemon = True
-        xrs_thread.start()
-        
         c.process_forever()
     except:
         logging.error("unhandled exception", exc_info=True)
