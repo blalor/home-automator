@@ -295,7 +295,8 @@ def run_stacktracer():
 
 def main():
     import log_config
-    
+    import daemonizer
+
     basedir = os.path.abspath(os.path.dirname(__file__))
     
     daemonizer.createDaemon()
