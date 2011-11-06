@@ -174,6 +174,8 @@ class XBeeDispatcher(object):
     def __dispatch_xb_frame(self, frame):
         """handles incoming XBee frames"""
         
+        # @todo make utctime, but this will affect the db logger, and the 
+        # plotter, too!
         frame['_timestamp'] = datetime.datetime.now()
         
         try:
