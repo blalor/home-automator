@@ -9,6 +9,7 @@ import threading
 import struct
 
 import consumer
+import json
 
 def calc_checksum(data):
     chksum = len(data)
@@ -52,7 +53,7 @@ class VoltometerDriver(consumer.BaseConsumer):
     # {{{ __handle_meter_packet
     def __handle_meter_packet(self, ch, method, props, body):
         try:
-            sensor_frame = self._deserialize(body)
+            sensor_frame = json.loads(body)
         
             clamp_tot = sensor_frame['clamp1_amps'] + sensor_frame['clamp2_amps']
         

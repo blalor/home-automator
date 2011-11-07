@@ -12,11 +12,16 @@ import sys, os
 import logging
 
 import datetime, time
+import pytz
+import iso8601
+
 import pika
-import cPickle as pickle
+import json
 
 import sqlite3
 import copy
+
+SYSTEM_TZ = pytz.timezone(time.tzname[0])
 
 class DBLogger(object):
     """docstring for DBLogger"""
@@ -109,10 +114,16 @@ class DBLogger(object):
     
     # {{{ on_receive_message
     def on_receive_message(self, channel, method, properties, body):
-        frame = pickle.loads(body)
+        try:
+            frame = json.loads(body)
+        except ValueError:
+            self._logger.error("unable to deserialize message body", exc_info = True)
+            self.channel.basic_ack(delivery_tag = method.delivery_tag)
+            return
+        
         
         rk = method.routing_key
-        timestamp = frame['timestamp']
+        timestamp = iso8601.parse_date(frame['timestamp']).astimezone(SYSTEM_TZ)
         
         latest_event = datetime.datetime.fromtimestamp(0)
         
