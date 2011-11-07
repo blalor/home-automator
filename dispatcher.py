@@ -192,7 +192,8 @@ class XBeeDispatcher(object):
                             exchange = '',
                             routing_key = props.reply_to,
                             properties = pika.BasicProperties(
-                                correlation_id = props.correlation_id
+                                correlation_id = props.correlation_id,
+                                content_type = 'application/x-python-pickle'
                             ),
                             body = serialize(frame)
                         )
@@ -219,6 +220,9 @@ class XBeeDispatcher(object):
                 self._xb_rx_chan.basic_publish(
                     exchange = self.RAW_XBEE_PACKET_EXCHANGE,
                     routing_key = routing_key,
+                    properties = pika.BasicProperties(
+                        content_type = 'application/x-python-pickle'
+                    ),
                     body = serialize(frame)
                 )
         

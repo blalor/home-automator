@@ -169,7 +169,8 @@ class RPCWorker(threading.Thread):
                     exchange='',
                     routing_key = req.reply_to,
                     properties=pika.BasicProperties(
-                        correlation_id = req.correlation_id
+                        correlation_id = req.correlation_id,
+                        content_type = 'application/x-python-pickle'
                     ),
                     body = serialize(response)
                 )
@@ -318,6 +319,7 @@ class BaseConsumer(object):
                 properties = pika.BasicProperties(
                     reply_to = self.__queue_name,
                     correlation_id = req.ticket,
+                    content_type = 'application/x-python-pickle'
                 ),
                 body = serialize(req.msg_body)
             )
@@ -605,6 +607,9 @@ class BaseConsumer(object):
             self.__publisher_chan.basic_publish(
                 exchange = 'sensor_data',
                 routing_key = routing_key,
+                properties = pika.BasicProperties(
+                    content_type = 'application/json'
+                ),
                 body = serialize_json(body)
             )
     
@@ -616,6 +621,9 @@ class BaseConsumer(object):
             self.__publisher_chan.basic_publish(
                 exchange = 'events',
                 routing_key = routing_key,
+                properties = pika.BasicProperties(
+                    content_type = 'application/json'
+                ),
                 body = serialize_json(body)
             )
     

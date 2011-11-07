@@ -173,6 +173,7 @@ class BrokerWorker(threading.Thread):
                 properties = pika.BasicProperties(
                     reply_to = self.__private_queue_name,
                     correlation_id = request.ticket,
+                    content_type = 'application/x-python-pickle'
                 ),
                 body = pickle.dumps({
                     'command' : request.command,
