@@ -15,6 +15,10 @@ import uuid
 import cPickle as pickle
 import json
 
+import datetime, time, pytz
+
+SYSTEM_TZ = pytz.timezone(time.tzname[0])
+
 class Disconnected(Exception):
     pass
 
@@ -34,7 +38,25 @@ def deserialize(data):
     return pickle.loads(data)
 
 # }}}
+
+# {{{ serialize_json
+def serialize_json(data):
+    def dthandler(obj):
+        if isinstance(obj, datetime.datetime):
+            dt = obj
+            
+            if dt.tzinfo == None:
+                # naive
+                dt = SYSTEM_TZ.localize(obj)
+            
+            return dt.astimezone(pytz.utc).isoformat()
+        
+        else:
+            raise TypeError(repr(o) + " is not JSON serializable")
     
+    return json.dumps(data, default=dthandler)
+
+# }}}
 
 # {{{{ class XBeeRequest
 class XBeeRequest(object):
@@ -583,7 +605,7 @@ class BaseConsumer(object):
             self.__publisher_chan.basic_publish(
                 exchange = 'sensor_data',
                 routing_key = routing_key,
-                body = json.dumps(body)
+                body = serialize_json(body)
             )
     
     # }}}
@@ -594,7 +616,7 @@ class BaseConsumer(object):
             self.__publisher_chan.basic_publish(
                 exchange = 'events',
                 routing_key = routing_key,
-                body = json.dumps(body)
+                body = serialize_json(body)
             )
     
     # }}}
@@ -620,4 +642,3 @@ if __name__ == '__main__':
     finally:
         bc.shutdown()
         log_config.shutdown()
-
