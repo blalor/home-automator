@@ -125,7 +125,7 @@ class DBLogger(object):
         rk = method.routing_key
         timestamp = iso8601.parse_date(frame['timestamp']).astimezone(SYSTEM_TZ)
         
-        latest_event = datetime.datetime.fromtimestamp(0)
+        latest_event = SYSTEM_TZ.localize(datetime.datetime.fromtimestamp(0))
         
         if rk in self.latest_event_received:
             latest_event = max(latest_event, self.latest_event_received[rk])
