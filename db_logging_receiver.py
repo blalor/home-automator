@@ -128,7 +128,7 @@ class DBLogger(object):
         latest_event = datetime.datetime.fromtimestamp(0)
         
         if rk in self.latest_event_received:
-            latest_event = self.latest_event_received[rk]
+            latest_event = max(latest_event, self.latest_event_received[rk])
             
             if timestamp < latest_event:
                 self._logger.warn(
