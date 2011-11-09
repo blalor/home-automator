@@ -27,7 +27,9 @@
 
 import os
 import sqlite3
-import logging, logging.handlers
+
+import logging
+logger = logging.getLogger("uploader")
 
 # http://www.hackorama.com/python/upload.shtml
 import urllib2
@@ -35,7 +37,6 @@ import MultipartPostHandler
 
 import cPickle as pickle
 import tempfile
-from pprint import pprint
 
 upload_url = "http://example.com/upload_data"
 
@@ -86,13 +87,13 @@ TABLE_TO_PICKLE_MAP = {
 
 def main():
     os.chdir(os.path.abspath(os.path.dirname(__file__)))
-    log.info("starting up in %s" % (os.getcwd(),))
+    logger.info("starting up in %s" % (os.getcwd(),))
     
     conn = sqlite3.connect("upload.db", timeout = 30, isolation_level = "EXCLUSIVE")
     
     ## attach databases
     conn.execute("attach database 'sensors.db' as 'source'")
-    log.debug("'source' attached")
+    logger.debug("'source' attached")
     
     table_name = None
     proceed_with_upload = True
@@ -113,7 +114,7 @@ def main():
                     ).fetchone()[0]
                 )
                 
-                log.debug("last_uploaded_rec for %s is %d", table_name, last_uploaded_rec)
+                logger.debug("last_uploaded_rec for %s is %d", table_name, last_uploaded_rec)
                 
                 ## insert rows into upload db
                 query = """
@@ -121,7 +122,7 @@ def main():
                     select * from 'source'.%(table_name)s
                      where 'source'.%(table_name)s.ts_utc > ?
                 """ % {'table_name':table_name}
-                log.debug("query: %s, args: %s", query, (last_uploaded_rec,))
+                logger.debug("query: %s, args: %s", query, (last_uploaded_rec,))
                 conn.execute(query, (last_uploaded_rec,))
                 
                 result = conn.execute(
@@ -131,7 +132,7 @@ def main():
                 if result != None:
                     last_uploaded_rec = int(result)
                 else:
-                    log.error("no last_uploaded_rec for table %s!", table_name)
+                    logger.error("no last_uploaded_rec for table %s!", table_name)
                 
                 ## delete rows from source table
                 conn.execute(
@@ -150,14 +151,14 @@ def main():
                     (last_uploaded_rec, table_name)
                 )
                 
-                log.debug("done moving '%s'; last uploaded rec: %d", table_name, last_uploaded_rec)
+                logger.debug("done moving '%s'; last uploaded rec: %d", table_name, last_uploaded_rec)
             
     except:
         proceed_with_upload = False
-        log.critical("unable to migrate data to upload.db for table %s", table_name, exc_info = True)
+        logger.critical("unable to migrate data to upload.db for table %s", table_name, exc_info = True)
         
     conn.execute("detach 'source'")
-    log.debug("'source' detached")
+    logger.debug("'source' detached")
     
     if proceed_with_upload:
         # data to upload
@@ -177,13 +178,11 @@ def main():
                     upload_pkg[dict_key] = result
                     conn.execute("delete from 'main'.%s" % (table_name,))
             
-            # pprint(upload_pkg)
-            
             if upload_pkg:
                 tmpf = tempfile.TemporaryFile()
                 
                 # pickle the dict
-                log.debug("pickling")
+                logger.debug("pickling")
                 pickle.dump(upload_pkg, tmpf)
                 
                 # seek to the beginning of the temp file so that it can be read by the
@@ -191,38 +190,28 @@ def main():
                 tmpf.seek(0)
                 
                 ## now, upload the data; 90 second timeout
-                log.debug("uploading")
+                logger.debug("uploading")
                 resp = urlopener.open(upload_url, {'pickle_file': tmpf}, 90)
                 
                 if resp.code == 200:
                     # upload was successful
-                    log.info("upload successful")
+                    logger.info("upload successful")
                 else:
-                    log.critical("FAILURE: %d -- %s" % (r.code, r.msg))
+                    logger.critical("FAILURE: %d -- %s" % (r.code, r.msg))
                 
             else:
-                log.warn("no data to upload")
+                logger.warn("no data to upload")
 
 
 if __name__ == '__main__':
     os.chdir(os.path.abspath(os.path.dirname(__file__)))
     
-    handler = logging.handlers.RotatingFileHandler('logs/uploader.log',
-                                                   maxBytes=(5 * 1024 * 1024),
-                                                   backupCount=5)
-    
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s [%(threadName)s] %(name)s -- %(message)s"))
-    
-    logging.getLogger().addHandler(handler)
-    logging.getLogger().setLevel(logging.INFO)
-    
-    log = logging.getLogger("uploader")
+    log_config.init_logging(basedir + "/logs/uploader.log")
     
     try:
         main()
     except:
-        log.critical("main() failed", exc_info = True)
+        logger.critical("main() failed", exc_info = True)
     finally:
-        logging.shutdown()
+        log_config.shutdown()
     
-
