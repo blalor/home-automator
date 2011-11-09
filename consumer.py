@@ -1,7 +1,7 @@
 #!/usr/bin/env python2.6
 # -*- coding: utf-8 -*-
 
-# base class(es) for implementing packet consumers from the raw_xbee_packets exchange.
+# base class(es) for implementing packet consumers from the raw_xbee_frames exchange.
 
 import sys,os
 
@@ -252,7 +252,7 @@ class BaseConsumer(object):
         """
         self._logger.debug("declaring exchanges")
         
-        channel.exchange_declare(exchange = 'raw_xbee_packets', type = 'topic')
+        channel.exchange_declare(exchange = 'raw_xbee_frames', type = 'topic')
         channel.exchange_declare(exchange = 'sensor_data', type = 'topic')
         channel.exchange_declare(exchange = 'events', type = 'topic')
     
@@ -422,7 +422,7 @@ class BaseConsumer(object):
         
         # bind routing keys to queue
         for addr in self._xbee_addresses:
-            self.__xb_frame_chan.queue_bind(exchange = 'raw_xbee_packets',
+            self.__xb_frame_chan.queue_bind(exchange = 'raw_xbee_frames',
                                             queue = self.__queue_name,
                                             routing_key = '*.' + addr.lower())
         
@@ -560,7 +560,7 @@ class BaseConsumer(object):
         
         # the following frames are handled here:
         #  • XBee "raw" frames
-        #      - sent to exhange 'raw_xbee_packets'
+        #      - sent to exhange 'raw_xbee_frames'
         #      - routing_key is '<frame type>.<source addr>'
         #  • XBee reply frames in response to a command or data sent to a device
         #      - sent to empty exchange

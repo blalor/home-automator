@@ -1,19 +1,21 @@
 #!/usr/bin/env python2.6
 # encoding: utf-8
 """
-dispatcher.py
+xbee_gateway.py
 
 Created by Brian Lalor on 2011-11-01.
+
+This is a gateway/router application that shuffles messages between the
+message broker and the XBee network. All received XBee frames are published
+to the raw_xbee_frames exchange, with the addition of a _timestamp key whose
+value is a datetime instance. XBee frame transmission to remote devices are
+handled via the RPC mechanism detailed in the RabbitMQ tutorial[1]; messages
+are consumed from the xbee_tx queue, and replies are published with the
+appropriate reply-to and correlation-id properties. Message bodies are
+serialized with pickle; JSON doesn't support binary data.
+
+[1] http://www.rabbitmq.com/tutorials/tutorial-six-python.html
 """
-
-## XBee instance spawns thread that fires callback when frame received.
-## That callback will send the message to the broker.
-
-## serialize XBee frames with pickle; json can't handle binary data (unless 
-## it's base64'd)
-
-## http://effbot.org/zone/thread-synchronization.htm
-from __future__ import with_statement
 
 import sys, os
 import random
@@ -25,12 +27,6 @@ import pika
 import xbee, serial
 
 import cPickle as pickle
-
-# {{{ _format_addr
-def format_addr(addr):
-    return ":".join(['%02x' % ord(x) for x in addr])
-
-# }}}
 
 # {{{ serialize
 def serialize(data):
@@ -61,9 +57,8 @@ def format_addr(addr):
 
 # }}}
 
-
 class XBeeDispatcher(object):
-    RAW_XBEE_PACKET_EXCHANGE = 'raw_xbee_packets'
+    RAW_XBEE_PACKET_EXCHANGE = 'raw_xbee_frames'
     
     # {{{ __init__
     def __init__(self, broker_host, serial_port, baudrate):
@@ -121,8 +116,8 @@ class XBeeDispatcher(object):
         ## to the connection for this thread
         
         try:
-            ## ack the message; there's nothing below that would be recoverable
-            ## if the same message were received again
+            # ack the message; there's nothing below that would be 
+            # recoverable if the same message were received again
             chan.basic_ack(delivery_tag = method.delivery_tag)
             
             req = deserialize(body)
@@ -158,15 +153,18 @@ class XBeeDispatcher(object):
                 #  'dest' : <addr>,
                 #  'data' : …,
                 # }
-                self.xbee.zb_tx_request(frame_id = frame_id,
-                                        dest_addr_long = parse_addr(req['dest']),
-                                        data = req['data'])
+                self.xbee.zb_tx_request(
+                    frame_id = frame_id,
+                    dest_addr_long = parse_addr(req['dest']),
+                    data = req['data']
+                )
                 
             
             self._logger.debug("XBee command sent and message ack'd")
             
         except:
-            self._logger.error("failed processing XBee TX message", exc_info = True)
+            self._logger.error("failed processing XBee TX message",
+                               exc_info = True)
     
     # }}}
     
@@ -181,8 +179,10 @@ class XBeeDispatcher(object):
         try:
             if 'frame_id' in frame:
                 # this is a response of some kind
-                self._logger.debug("found reply of type %s with frame_id %02x",
-                                   frame['id'], ord(frame['frame_id']))
+                self._logger.debug(
+                    "found reply of type %s with frame_id %02x",
+                    frame['id'], ord(frame['frame_id'])
+                )
                 
                 with self.__correlation_lock:
                     if frame['frame_id'] in self.__correlations:
