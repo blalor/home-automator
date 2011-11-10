@@ -1,7 +1,8 @@
 #!/usr/bin/env python2.6
 # -*- coding: utf-8 -*-
 
-# base class(es) for implementing packet consumers from the raw_xbee_frames exchange.
+# base class(es) for implementing XBee frame consumers from the
+# raw_xbee_frames exchange.
 
 # load configuration data
 from config import config_data as config
@@ -22,10 +23,6 @@ import datetime, time, pytz
 
 SYSTEM_TZ = pytz.timezone(time.tzname[0])
 
-class Disconnected(Exception):
-    pass
-
-
 class InvalidDestination(Exception):
     pass
 
@@ -44,6 +41,8 @@ def deserialize(data):
 
 # {{{ serialize_json
 def serialize_json(data):
+    """serializes an object to JSON, with handling for datetime instances"""
+    
     def dthandler(obj):
         if isinstance(obj, datetime.datetime):
             dt = obj
@@ -63,7 +62,7 @@ def serialize_json(data):
 
 # {{{{ class XBeeRequest
 class XBeeRequest(object):
-    """docstring for XBeeRequest"""
+    """Encapsulation of state data for transmitting outbound XBee frames"""
     
     # {{{ __init__
     def __init__(self, dest, msg_body):
@@ -89,7 +88,7 @@ class XBeeRequest(object):
 
 # {{{{ class RPCRequest
 class RPCRequest(object):
-    """docstring for RPCRequest"""
+    """Encapsulation of state data for handling RPC invocations"""
     
     # {{{ __init__
     def __init__(
@@ -121,7 +120,7 @@ class RPCRequest(object):
 
 # {{{{ class RPCWorker
 class RPCWorker(threading.Thread):
-    """docstring for RPCWorker"""
+    """Threaded worker class for handling RPC invocations"""
     
     # {{{ __init__
     def __init__(self, conn_params):
@@ -138,12 +137,16 @@ class RPCWorker(threading.Thread):
     
     # {{{ add_request
     def add_request(self, req):
+        """Enqueues an RPCRequest"""
+        
         self.__pending_requests.put(req)
     
     # }}}
     
     # {{{ shutdown
     def shutdown(self):
+        """Initiates an orderly shutdown of this thread"""
+        
         self._logger.debug("shutdown requested")
         self.__shutdown_event.set()
     
@@ -151,6 +154,10 @@ class RPCWorker(threading.Thread):
     
     # {{{ __runner
     def __runner(self):
+        """The thread target; handles RPC invocations and publishes the 
+        result"""
+        
+        
         conn = pika.BlockingConnection(self.__connection_params)
         chan = conn.channel()
         
@@ -188,6 +195,11 @@ class RPCWorker(threading.Thread):
 # }}}}
 
 class BaseConsumer(object):
+    """
+    Base class for implementing consumers of XBee frames.  Most concrete 
+    classes will only need to implement handle_packet().
+    """
+    
     # {{{ __init__
     def __init__(self, addrs = ('#')):
         """
@@ -232,6 +244,8 @@ class BaseConsumer(object):
     
     # {{{ _create_broker_connection
     def _create_broker_connection(self):
+        """returns a new broker connection"""
+        
         return pika.BlockingConnection(self._connection_params)
     
     # }}}
@@ -245,23 +259,6 @@ class BaseConsumer(object):
     # {{{ _deserialize
     def _deserialize(self, data):
         return deserialize(data)
-    
-    # }}}
-    
-    # {{{ _parse_addr
-    def _parse_addr(self, addr):
-        paddr = None
-        
-        if addr != None:
-            paddr = "".join(chr(int(x, 16)) for x in addr.split(":"))
-        
-        return paddr
-    
-    # }}}
-    
-    # {{{ _format_addr
-    def _format_addr(self, addr):
-        return ":".join(['%02x' % ord(x) for x in addr])
     
     # }}}
     
