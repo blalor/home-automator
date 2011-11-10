@@ -135,14 +135,8 @@ def addr_to_bin(addr):
     return "".join(chr(int(x, 16)) for x in addr.split(":"))
 
 
-def send_and_wait():
-    pass
-
-
 class Usage(Exception):
-    def __init__(self, msg):
-        self.msg = msg
-    
+    pass
 
 
 def main(argv=None):
