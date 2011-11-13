@@ -3,6 +3,9 @@
 
 # base class(es) for implementing packet consumers from the raw_xbee_frames exchange.
 
+# load configuration data
+from config import config_data as config
+
 import sys,os
 
 import pika
@@ -195,7 +198,9 @@ class BaseConsumer(object):
         self._logger = logging.getLogger(self.__class__.__name__)
         
         self._xbee_addresses = addrs
-        self._connection_params = pika.ConnectionParameters(host='pepe')
+        self._connection_params = pika.ConnectionParameters(
+            host = config.message_broker.host
+        )
         
         self.__queue_name = None
         
@@ -243,21 +248,6 @@ class BaseConsumer(object):
     
     # }}}
     
-    # {{{ _declare_exchanges
-    def _declare_exchanges(self, channel):
-        """
-        declares required exchanges; sub-classes should extend.
-        
-        @todo move to config file (exchanges.ini) ?
-        """
-        self._logger.debug("declaring exchanges")
-        
-        channel.exchange_declare(exchange = 'raw_xbee_frames', type = 'topic')
-        channel.exchange_declare(exchange = 'sensor_data', type = 'topic')
-        channel.exchange_declare(exchange = 'events', type = 'topic')
-    
-    # }}}
-    
     # {{{ _parse_addr
     def _parse_addr(self, addr):
         paddr = None
@@ -294,7 +284,7 @@ class BaseConsumer(object):
             self.__rpc_queue_map[queue] = {}
         
         self.__rpc_queue_map[queue][func_name] = func
-        
+    
     # }}}
     
     # {{{ __send_xb_frame
@@ -410,8 +400,6 @@ class BaseConsumer(object):
         self.__xb_frame_conn = self._create_broker_connection()
         self.__xb_frame_chan = self.__xb_frame_conn.channel()
         
-        self._declare_exchanges(self.__xb_frame_chan)
-        
         # create new queue exclusively for us (channel is arbitrary)
         self.__queue_name = self.__xb_frame_chan.queue_declare(exclusive = True).method.queue
         
@@ -465,7 +453,7 @@ class BaseConsumer(object):
         self.__publisher_chan_lock = threading.RLock()
         
         self.__xb_frame_chan.start_consuming()
-        
+    
     # }}}
     
     # {{{ process_forever
@@ -511,7 +499,7 @@ class BaseConsumer(object):
         self._logger.warn("shutting down")
         
         self.__shutdown_event.set()
-        
+    
     # }}}
     
     # {{{ __on_receive_rpc_request
@@ -547,7 +535,6 @@ class BaseConsumer(object):
         )
         
         ch.basic_ack(delivery_tag = method.delivery_tag)
-        
     
     # }}}
     
@@ -590,9 +577,8 @@ class BaseConsumer(object):
             except:
                 self._logger.critical("exception handling packet", exc_info = True)
             
-        
-    # }}}
     
+    # }}}
     
     # {{{ handle_packet
     def handle_packet(self, formatted_addr, packet):
@@ -632,9 +618,7 @@ class BaseConsumer(object):
 
 
 if __name__ == '__main__':
-    import daemonizer
-    
-    import log_config
+    from support import daemonizer, log_config
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     

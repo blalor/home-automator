@@ -14,6 +14,7 @@ import pika
 import json
 
 from pprint import pprint
+from config import config_data as config
 
 class Listener(object):
     # {{{ __init__
@@ -21,7 +22,7 @@ class Listener(object):
         super(Listener, self).__init__()
         
         self._connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host='pepe')
+            pika.ConnectionParameters(host=config.message_broker.host)
         )
         
         self._channel = self._connection.channel()

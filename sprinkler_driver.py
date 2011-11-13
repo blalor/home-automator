@@ -88,10 +88,9 @@ class SprinklerConsumer(consumer.BaseConsumer):
 
 
 def main():
+    from support import daemonizer, log_config
+    import logging
     import signal
-    import daemonizer
-    
-    import log_config, logging
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     

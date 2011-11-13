@@ -124,10 +124,9 @@ class FurnaceConsumer(consumer.BaseConsumer):
 
 
 def main():
+    from support import daemonizer, log_config
     import signal
-    import daemonizer
-    
-    import log_config, logging
+    import logging
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     

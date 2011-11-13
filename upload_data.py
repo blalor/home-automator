@@ -25,6 +25,11 @@
 ## should get uploaded.  This'll make it possible to keep some data in the
 ## power table for real-time monitoring.
 
+
+# load configuration data
+from config import config_data
+config = config_data.uploader
+
 import os
 import sqlite3
 
@@ -38,25 +43,16 @@ import MultipartPostHandler
 import cPickle as pickle
 import tempfile
 
-upload_url = "http://example.com/upload_data"
-
 auth_handler = urllib2.HTTPDigestAuthHandler()
-auth_handler.add_password("<basic http auth realm>", upload_url, "<userid>", "<password>")
+auth_handler.add_password(
+    config.auth.realm,
+    config.url,
+    config.auth.username,
+    config.auth.password
+)
 
 urlopener = urllib2.build_opener(MultipartPostHandler.MultipartPostHandler,
                                  auth_handler)
-
-TEMP_SENSOR_NODE_MAP = {
-    '00:11:22:33:44:55:66:22' : 'office.temperature',
-    '00:11:22:33:44:55:66:DC' : 'living_room.temperature',
-    '00:11:22:33:44:55:66:A5' : 'garage.temperature',
-    '00:11:22:33:44:55:66:7D' : 'basement.temperature',
-}
-
-HUMID_SENSOR_NODE_MAP = {
-    '00:11:22:33:44:55:66:22': 'office.humidity',
-    '00:11:22:33:44:55:66:DC': 'living_room.humidity',
-}
 
 def identity_map(row):
     return row
@@ -64,14 +60,14 @@ def identity_map(row):
 
 def temp_map(row):
     trow = list(row)
-    trow[1] = TEMP_SENSOR_NODE_MAP[row[1].upper()]
+    trow[1] = config.temp_sensor_node_map[row[1].upper()]
     
     return trow
 
 
 def humid_map(row):
     trow = list(row)
-    trow[1] = HUMID_SENSOR_NODE_MAP[row[1].upper()]
+    trow[1] = config.humid_sensor_node_map[row[1].upper()]
     
     return trow
 
@@ -191,7 +187,7 @@ def main():
                 
                 ## now, upload the data; 90 second timeout
                 logger.debug("uploading")
-                resp = urlopener.open(upload_url, {'pickle_file': tmpf}, 90)
+                resp = urlopener.open(config.url, {'pickle_file': tmpf}, 90)
                 
                 if resp.code == 200:
                     # upload was successful

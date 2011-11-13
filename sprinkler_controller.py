@@ -11,8 +11,12 @@ import sys
 import os
 import xmlrpclib
 
+from config import config_data as config
+
 def main():
-    srv = xmlrpclib.Server("http://pepe:10103")
+    srv = xmlrpclib.Server(
+        "http://%s:%d" % (config.xmlrpc_server.host, config.xmlrpc_server.port)
+    )
     
     meth = getattr(srv, sys.argv[1])
     meth(int(sys.argv[2]))

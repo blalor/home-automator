@@ -295,9 +295,9 @@ def run_stacktracer():
 
 
 def main():
-    import log_config
-    import daemonizer
-
+    from support import daemonizer, log_config
+    from config import config_data as config
+    
     basedir = os.path.abspath(os.path.dirname(__file__))
     
     daemonizer.createDaemon()
@@ -305,11 +305,13 @@ def main():
     
     # log_config.init_logging_stdout()
     
-    worker = BrokerWorker('pepe')
+    worker = BrokerWorker(config.message_broker.host)
     worker.daemon = True
     worker.start()
     
-    server = SimpleXMLRPCServer.SimpleXMLRPCServer(('', 9999))
+    server = SimpleXMLRPCServer.SimpleXMLRPCServer(
+        (config.xmlrpc_server.host, config.xmlrpc_server.port)
+    )
     
     # server.register_introspection_functions()
     server.register_instance(MessagingProxy(worker))

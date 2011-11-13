@@ -33,9 +33,9 @@ class FuelOilTankConsumer(consumer.BaseConsumer):
 
 
 def main():
-    import log_config, logging
+    from support import daemonizer, log_config
+    import logging
     import signal
-    import daemonizer
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     

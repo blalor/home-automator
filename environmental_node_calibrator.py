@@ -6,7 +6,7 @@ import consumer
 import time
 import signal
 import logging, logging.handlers
-import daemonizer
+from support import daemonizer
 import threading
 
 class EnvironmentalNodeCalibrator(consumer.DatabaseConsumer):

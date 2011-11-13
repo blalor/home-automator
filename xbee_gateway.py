@@ -284,10 +284,10 @@ class XBeeDispatcher(object):
 
 
 def main():
-    import daemonizer
-    import signal
+    from support import daemonizer, log_config
+    from config import config_data as config
     
-    import log_config
+    import signal
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     
@@ -297,7 +297,7 @@ def main():
     # log_config.init_logging_stdout()
     
     dispatcher = XBeeDispatcher(
-        broker_host = 'pepe',
+        broker_host = config.message_broker.host,
         serial_port = sys.argv[1],
         baudrate = int(sys.argv[2])
     )

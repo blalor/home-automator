@@ -231,8 +231,9 @@ class DBLogger(object):
 
 
 def main():
-    import daemonizer, signal
-    import log_config
+    from support import daemonizer, log_config
+    from config import config_data as config
+    import signal
     
     basedir = os.path.abspath(os.path.dirname(__file__))
     
@@ -246,7 +247,7 @@ def main():
     # log_config.init_logging_stdout()
     
     try:
-        dbl = DBLogger('pepe', basedir + '/sensors.db')
+        dbl = DBLogger(config.message_broker.host, basedir + '/sensors.db')
         
         signal.signal(signal.SIGQUIT, lambda signum, frame: dbl.shutdown())
         signal.signal(signal.SIGTERM, lambda signum, frame: dbl.shutdown())
