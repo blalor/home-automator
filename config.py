@@ -12,6 +12,10 @@ config_data = attrdict({
         }
     },
     
+    "wunderground" : {
+        "api_key" : "my api key",
+    },
+    
     "xmlrpc_server" : {
         "host" : "xmlrpc_server_host",
         "port" : 9999,
