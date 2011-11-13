@@ -38,7 +38,7 @@ logger = logging.getLogger("uploader")
 
 # http://www.hackorama.com/python/upload.shtml
 import urllib2
-import MultipartPostHandler
+from support import MultipartPostHandler
 
 import cPickle as pickle
 import tempfile
@@ -200,7 +200,9 @@ def main():
 
 
 if __name__ == '__main__':
-    os.chdir(os.path.abspath(os.path.dirname(__file__)))
+    from support import log_config
+    basedir = os.path.abspath(os.path.dirname(__file__))
+    os.chdir(basedir)
     
     log_config.init_logging(basedir + "/logs/uploader.log")
     
