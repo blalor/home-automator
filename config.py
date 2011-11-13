@@ -9,11 +9,13 @@ config_data = attrdict({
             "raw_xbee_frames" : { "type" : "topic" },
             "sensor_data"     : { "type" : "topic" },
             "events"          : { "type" : "topic" },
+            "weather"         : { "type" : "topic" },
         }
     },
     
     "wunderground" : {
         "api_key" : "my api key",
+        "station" : "PWS:<pws station id>",
     },
     
     "xmlrpc_server" : {
