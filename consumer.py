@@ -400,6 +400,17 @@ class BaseConsumer(object):
         self.__xb_frame_conn = self._create_broker_connection()
         self.__xb_frame_chan = self.__xb_frame_conn.channel()
         
+        # channel for transmitting XBee frames
+        self.__rpc_conn = self._create_broker_connection()
+        self.__rpc_chan = self.__rpc_conn.channel()
+        self.__rpc_chan_lock = threading.RLock()
+        
+        
+        # channel and connection for publishing sensor data and events
+        self.__publisher_conn = self._create_broker_connection()
+        self.__publisher_chan = self.__xb_frame_conn.channel()
+        self.__publisher_chan_lock = threading.RLock()
+        
         # create new queue exclusively for us (channel is arbitrary)
         self.__queue_name = self.__xb_frame_chan.queue_declare(exclusive = True).method.queue
         
@@ -440,17 +451,6 @@ class BaseConsumer(object):
                     self.__on_receive_rpc_request,
                     queue = queue
                 )
-        
-        # channel for transmitting XBee frames
-        self.__rpc_conn = self._create_broker_connection()
-        self.__rpc_chan = self.__rpc_conn.channel()
-        self.__rpc_chan_lock = threading.RLock()
-        
-        
-        # channel and connection for publishing sensor data and events
-        self.__publisher_conn = self._create_broker_connection()
-        self.__publisher_chan = self.__xb_frame_conn.channel()
-        self.__publisher_chan_lock = threading.RLock()
         
         self.__xb_frame_chan.start_consuming()
     
