@@ -21,6 +21,8 @@ A few months ago I heard about [RabbitMQ][1], started learning a bit more about 
 
 Currently, most of the devices have [Arduino-based][4] microcontrollers that communicate wirelessly with a central gateway using [XBee modules][5].
 
+![system layout](https://github.com/blalor/home-automator/wiki/images/system%20layout.png "system layout")
+
 Components
 ----------
 
