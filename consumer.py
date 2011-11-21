@@ -27,6 +27,10 @@ class InvalidDestination(Exception):
     pass
 
 
+class InvalidSerializationContentType(Exception):
+    pass
+
+
 # {{{ serialize
 def serialize(data):
     return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
@@ -53,12 +57,26 @@ def serialize_json(data):
             
             return dt.astimezone(pytz.utc).isoformat()
         
+        elif isinstance(obj, Exception):
+            return {
+                'py/class': obj.__class__.__name__,
+                'args': obj.args,
+                'message': obj.message
+            }
         else:
-            raise TypeError(repr(o) + " is not JSON serializable")
+            raise TypeError(repr(obj) + " is not JSON serializable")
     
     return json.dumps(data, default=dthandler)
 
 # }}}
+
+# {{{ deserialize_json
+# @todo turn timestamp into datetime
+def deserialize_json(data):
+    return json.loads(data)
+
+# }}}
+
 
 # {{{{ class XBeeRequest
 class XBeeRequest(object):
@@ -94,6 +112,7 @@ class RPCRequest(object):
     def __init__(
         self,
         correlation_id = None,
+        content_type = None,
         reply_to = None,
         callback = None,
         args = None
@@ -102,6 +121,7 @@ class RPCRequest(object):
         super(RPCRequest, self).__init__()
         
         self.correlation_id = correlation_id
+        self.content_type   = content_type
         self.reply_to       = reply_to
         self.callback       = callback
         self.args           = args
@@ -175,14 +195,21 @@ class RPCWorker(threading.Thread):
                     # the exception value
                     response['exception'] = sys.exc_info()[1]
                 
+                if req.content_type == 'application/x-python-pickle':
+                    resp_body = serialize(response)
+                elif req.content_type == 'application/json':
+                    resp_body = serialize_json(response)
+                else:
+                    raise InvalidSerializationContentType(req.content_type)
+                
                 chan.basic_publish(
                     exchange='',
                     routing_key = req.reply_to,
                     properties=pika.BasicProperties(
                         correlation_id = req.correlation_id,
-                        content_type = 'application/x-python-pickle'
+                        content_type = req.content_type,
                     ),
-                    body = serialize(response)
+                    body = resp_body
                 )
             except Queue.Empty:
                 pass
@@ -514,22 +541,28 @@ class BaseConsumer(object):
             "%s not a valid RPC queue" % (method.routing_key,)
         
         # hand off the RPC request to the RPCWorker
-        req_body = deserialize(body)
+        if props.content_type == 'application/x-python-pickle':
+            req_body = deserialize(body)
+        elif props.content_type == 'application/json':
+            req_body = deserialize_json(body)
+        else:
+            raise InvalidSerializationContentType(props.content_type)
         
         callback = None
         if req_body['command'] in self.__rpc_queue_map[method.routing_key]:
             callback = self.__rpc_queue_map[method.routing_key][req_body['command']]
-        else:
-            self._logger.warn("command %s not configured for queue %s", req_body['command'], method.routing_key)
-        
-        self.__rpc_worker.add_request(
-            RPCRequest(
-                correlation_id = props.correlation_id,
-                reply_to = props.reply_to,
-                callback = callback,
-                args = req_body['args']
+            
+            self.__rpc_worker.add_request(
+                RPCRequest(
+                    correlation_id = props.correlation_id,
+                    content_type = props.content_type,
+                    reply_to = props.reply_to,
+                    callback = callback,
+                    args = req_body['args']
+                )
             )
-        )
+        else:
+            self._logger.error("command %s not configured for queue %s", req_body['command'], method.routing_key)
         
         ch.basic_ack(delivery_tag = method.delivery_tag)
     
