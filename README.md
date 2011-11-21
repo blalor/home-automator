@@ -90,6 +90,8 @@ Then:
 
 Simple HTML and jQuery iPhone web app.  Start the `amqp_socketio_bridge.js` and point your browser to [http://localhost:8000/](http://localhost:8000/).
 
+<img src="https://github.com/blalor/home-automator/wiki/images/furnace%20timer%20screenshot.png" width="320" height="480" />
+
 [1]: http://www.rabbitmq.com/
 [2]: http://en.wikipedia.org/wiki/Publish/subscribe
 [3]: https://github.com/blalor/home-automator/tree/b4a59caab7da5b0771b1b6abc151f1b64eedd326
