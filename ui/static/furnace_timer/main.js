@@ -5,8 +5,6 @@ var timeout_id = null;
 // socket.io connection
 var conn = null;
 
-var pending_rpc_requests = {};
-
 function update_button() {
     if (timer_active) {
         // show button in red, "stop" text
@@ -22,15 +20,18 @@ function update_button() {
 function start_timer() {
     timer_active = true;
     
-    invoke_rpc_method('furnace', 'start_timer', null, function(started) {
-        if (started) {
-            $("#footer").text("timer started");
-        } else {
-            $("#footer").text("timer failed to start");
-        }
+    RabbitRPC.invoke_rpc_method(
+        'furnace', 'start_timer', null,
+        function(started) {
+            if (started) {
+                $("#footer").text("timer started");
+            } else {
+                $("#footer").text("timer failed to start");
+            }
         
-        poll_time_remaining();
-    });
+            poll_time_remaining();
+        }
+    );
     
     update_button();
 }
@@ -45,15 +46,18 @@ function cancel_timer() {
         timeout_id = null;
     }
 
-    invoke_rpc_method('furnace', 'cancel_timer', null, function(stopped) {
-        if (stopped) {
-            $("#footer").text("timer stopped");
-        } else {
-            $("#footer").text("timer failed to stop!");
-        }
+    RabbitRPC.invoke_rpc_method(
+        'furnace', 'cancel_timer', null,
+        function(stopped) {
+            if (stopped) {
+                $("#footer").text("timer stopped");
+            } else {
+                $("#footer").text("timer failed to stop!");
+            }
         
-        update_countdown(0);
-    });
+            update_countdown(0);
+        }
+    );
 }
 
 function handle_button_click() {
@@ -102,48 +106,13 @@ function update_countdown(duration) {
     update_button();
 }
 
-function handle_rpc_reply(msg) {
-    var response = msg.reply;
-    var ticket = msg.ticket;
-    
-    var cb = null;
-    
-    // retrieve and invoke callback, if provided
-    if (pending_rpc_requests.hasOwnProperty(ticket)) {
-        cb = pending_rpc_requests[ticket];
-        
-        delete pending_rpc_requests[ticket];
-    }
-    
-    if (response.hasOwnProperty('exception')) {
-        throw response.exception;
-    }
-    
-    if (cb != null) {
-        cb(response.result);
-    }
-}
-
-function invoke_rpc_method(queue, command, args, cb) {
-    conn.emit(
-        'rpc_request',
-        {
-            queue: queue,
-            command: command,
-            args: args
-        },
-        function(ticket) {
-            if (typeof cb == 'function') {
-                pending_rpc_requests[ticket] = cb;
-            }
+function poll_time_remaining() {
+    RabbitRPC.invoke_rpc_method(
+        'furnace', 'get_time_remaining', null,
+        function(seconds_remaining) {
+            update_countdown(seconds_remaining);
         }
     );
-}
-
-function poll_time_remaining() {
-    invoke_rpc_method('furnace', 'get_time_remaining', null, function(seconds_remaining) {
-        update_countdown(seconds_remaining);
-    });
 }
 
 function handle_sensor_data(msg) {
@@ -203,9 +172,10 @@ function do_on_load() {
     // connect to the server
     conn = io.connect();
     
+    RabbitRPC.prepare_connection(conn);
+    
     // wire up the event handlers
     conn.on('sensor_data', handle_sensor_data);
-    conn.on('rpc_reply', handle_rpc_reply);
     
     conn.on('error', function(e) {
         console.log("got error in socket.io connection");
