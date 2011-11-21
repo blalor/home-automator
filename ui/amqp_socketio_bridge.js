@@ -66,7 +66,60 @@ var amqp = require('amqp');
 var socket_io = require('socket.io');
 var uuid = require('node-uuid');
 
-var amqp_conn = amqp.createConnection({ host: 'localhost' });
+var http = require("http");
+var url = require("url");
+var path = require("path");
+var fs = require("fs");
+
+function static_request_handler(request, response) {
+    var uri = url.parse(request.url).pathname;
+    var filename = path.join(process.cwd(), "static", uri);
+
+    path.exists(filename, function(exists) {
+        if (! exists) {
+            response.writeHead(404, {"Content-Type": "text/plain"});
+            response.write("404 Not Found\n");
+            response.end();
+            return;
+        }
+
+        if (fs.statSync(filename).isDirectory()) {
+            filename += '/index.html'
+        };
+
+        fs.readFile(filename, "binary", function(err, file) {
+            if (err) {        
+                response.writeHead(500, {"Content-Type": "text/plain"});
+                response.write(err + "\n");
+                response.end();
+                return;
+            }
+            
+            // need the extension to map to a mime type
+            var mime_types = {
+                'css': 'text/css',
+                'eot': 'application/vnd.ms-fontobject',
+                'js' : 'application/javascript',
+                'png' : 'image/png',
+                'svg' : 'image/svg+xml',
+                'ttf' : 'application/x-font-ttf',
+                'woff' : 'application/x-font-woff',
+                'xhtml' : 'application/xhtml+xml',
+                'html' : 'application/xhtml+xml'
+            };
+            
+            var split_fn = filename.split(".");
+            var extension = split_fn[split_fn.length - 1];
+            var mime_type = 
+            
+            response.writeHead(200, {'Content-Type': mime_types[extension]});
+            response.write(file, "binary");
+            response.end();
+        });
+    });
+}
+
+var amqp_conn = amqp.createConnection({ host: 'pepe.home.bravo5.org' });
 
 // Wait for connection to become established.
 amqp_conn.on("ready", function () {
@@ -77,7 +130,9 @@ amqp_conn.on("error", function () {
     console.log("amqp connection error");
 });
 
-var io = socket_io.listen(8080, {'log level' : 2});
+var http_server = http.createServer(static_request_handler);
+
+var io = socket_io.listen(http_server, {'log level' : 2});
 
 io.sockets.on('connection', function (socket) {
     console.log("client connected");
@@ -252,3 +307,5 @@ io.sockets.on('connection', function (socket) {
         });
     });
 });
+
+http_server.listen(8000);

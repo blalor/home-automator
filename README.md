@@ -66,17 +66,39 @@ Interfaces with the remotely-operated sprinkler controller I built.  Sprinkler i
 * `sprinkler_driver.py`
 * `sprinkler_controller.py`
 
-Future development
-------------------
+### `amqp_socketio_bridge.js`
 
-Not yet represented here is a [Node.js][7] AMQP-to-[WebSocket][8] gateway that will be used for web browser interfaces to the system.
+This is an AMQP-to-[WebSocket][websocket] gateway written in [Node.js][nodejs].  The WebSocket part is actually an implementation detail under the covers of the very cool (and poorly documented) [Socket.IO][socketio].  There's some boilerplate code at the top of the file that shows how to hook the browser up so that you can subscribe to topics on an exchange and invoke RPC methods.
 
+Several libraries are required:
+
+* [socket.io][socketio] version 0.8.7
+* [amqp][node-amqp] version 0.1.1
+* [node-uuid][node-uuid] version 1.2.0
+
+Just install these in the current directory with [npm][npm]
+
+    $ npm install socket.io@0.8.7
+    $ npm install amqp@0.1.1
+    $ npm install node-uuid@1.2.0
+
+Then:
+
+    $ node amqp_socketio_bridge.js
+
+### Furnace Timer UI
+
+Simple HTML and jQuery iPhone web app.  Start the `amqp_socketio_bridge.js` and point your browser to [http://localhost:8000/](http://localhost:8000/).
 
 [1]: http://www.rabbitmq.com/
 [2]: http://en.wikipedia.org/wiki/Publish/subscribe
-[3]:  https://github.com/blalor/home-automator/tree/b4a59caab7da5b0771b1b6abc151f1b64eedd326
+[3]: https://github.com/blalor/home-automator/tree/b4a59caab7da5b0771b1b6abc151f1b64eedd326
 [4]: http://arduino.cc/
 [5]: http://www.ladyada.net/make/xbee/
 [6]: http://en.wikipedia.org/wiki/XML-RPC
-[7]: http://nodejs.org/
-[8]: http://en.wikipedia.org/wiki/WebSocket
+[nodejs]: http://nodejs.org/
+[websocket]: http://en.wikipedia.org/wiki/WebSocket
+[socketio]: http://socket.io/
+[node-amqp]: http://github.com/postwait/node-amqp
+[node-uuid]: http://github.com/broofa/node-uuid
+[npm]: http://npmjs.org/

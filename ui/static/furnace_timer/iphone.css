@@ -1,0 +1,66 @@
+@import url('fonts/fonts.css');
+
+body {
+    background-color: #000; /* Background color */
+    color: #ddd; /* Foreground color used for text */
+    font-family: Verdana;
+    font-size: 14px;
+    margin: 0; /* Amount of negative space around the outside of the body */
+    padding: 0; /* Amount of negative space around the inside of the body */
+}
+
+#countdown {
+    font-family: 'LCDNormal';
+    font-size: 96px;
+    color: #00f;
+    text-align: center;
+    padding: 20px;
+    text-shadow: 2px 2px 2px rgba(128, 128, 255, 0.7);
+}
+
+#graph {
+    background-color: #ddd;
+    color: #000;
+    width: 75%;
+    text-align: center;
+    margin: 0 auto;
+}
+
+#controls {
+}
+
+#the_button {
+    -webkit-border-radius: 10px;
+    
+    text-align: center;
+    color: #fff;
+    
+    /* http://phrogz.net/css/vertical-align/index.html */
+    line-height: 4em;
+    
+    /* center horizontally */
+    width: 80%;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.button_start {
+    background-color: #0f0;
+}
+
+.button_stop {
+    background-color: #f00;
+}
+
+#footer {
+    position: absolute;
+    width: 100%;
+    
+    bottom: 2px;
+    padding-bottom: 2px;
+    height: 14px; /* matches body font-size */
+    
+    text-align: center;
+    color: #999;
+}
+
