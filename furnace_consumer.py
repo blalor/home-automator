@@ -64,18 +64,24 @@ class FurnaceConsumer(consumer.BaseConsumer):
                     )
                 )
                 
-                if zone_state != 'unknown':
+                # @todo update the db logger
+                if zone_state == 'unknown':
+                    db_zone_val = -1
+                elif zone_state == 'active':
+                    db_zone_val = 1
+                else:
                     db_zone_val = 0
-                    
-                    if zone_state == 'active':
-                        db_zone_val = 1
-                    
-                    sensor_frame = {
-                        'timestamp' : frame['_timestamp'],
-                        'zone_active' : db_zone_val,
-                    }
-                    
-                    self.publish_sensor_data('furnace', sensor_frame)
+                
+                sensor_frame = {
+                    'timestamp'        : frame['_timestamp'],
+                    'zone_active'      : db_zone_val,
+                                       
+                    'zone_state'       : zone_state,
+                    'powered'          : powered,
+                    'time_remaining'   : self.__timer_remaining,
+                }
+                
+                self.publish_sensor_data('furnace', sensor_frame)
                     
             else:
                 self._logger.warn("bad checksum")
