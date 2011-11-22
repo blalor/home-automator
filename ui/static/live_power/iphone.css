@@ -1,0 +1,33 @@
+@import url('/common/fonts/fonts.css');
+
+body {
+    background-color: #000; /* Background color */
+    color: #ddd; /* Foreground color used for text */
+    font-family: Verdana;
+    font-size: 14px;
+    margin: 0; /* Amount of negative space around the outside of the body */
+    padding: 0; /* Amount of negative space around the inside of the body */
+}
+
+h1 {
+    text-align: center;
+    font-size: 14px;
+}
+
+#chart {
+    width: 100%;
+    height: 100%;
+}
+
+#footer {
+    position: absolute;
+    width: 100%;
+    
+    bottom: 2px;
+    padding-bottom: 2px;
+    height: 14px; /* matches body font-size */
+    
+    text-align: center;
+    color: #999;
+}
+
