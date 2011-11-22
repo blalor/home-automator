@@ -71,53 +71,18 @@ var url = require("url");
 var path = require("path");
 var fs = require("fs");
 
-function static_request_handler(request, response) {
-    var uri = url.parse(request.url).pathname;
-    var filename = path.join(process.cwd(), "static", uri);
+var static = require('node-static');
 
-    path.exists(filename, function(exists) {
-        if (! exists) {
-            response.writeHead(404, {"Content-Type": "text/plain"});
-            response.write("404 Not Found\n");
-            response.end();
-            return;
-        }
+// override/provide additional mime types
+var staticMimeTypes = require('node-static/lib/node-static/mime');
 
-        if (fs.statSync(filename).isDirectory()) {
-            filename += '/index.html'
-        };
+staticMimeTypes.contentTypes['xhtml'] = 'application/xhtml+xml';
+staticMimeTypes.contentTypes['html']  = 'application/xhtml+xml';
+staticMimeTypes.contentTypes['eot']   = 'application/vnd.ms-fontobject';
+staticMimeTypes.contentTypes['ttf']   = 'application/x-font-ttf';
+staticMimeTypes.contentTypes['woff']  = 'application/x-font-woff';
 
-        fs.readFile(filename, "binary", function(err, file) {
-            if (err) {        
-                response.writeHead(500, {"Content-Type": "text/plain"});
-                response.write(err + "\n");
-                response.end();
-                return;
-            }
-            
-            // need the extension to map to a mime type
-            var mime_types = {
-                'css': 'text/css',
-                'eot': 'application/vnd.ms-fontobject',
-                'js' : 'application/javascript',
-                'png' : 'image/png',
-                'svg' : 'image/svg+xml',
-                'ttf' : 'application/x-font-ttf',
-                'woff' : 'application/x-font-woff',
-                'xhtml' : 'application/xhtml+xml',
-                'html' : 'application/xhtml+xml'
-            };
-            
-            var split_fn = filename.split(".");
-            var extension = split_fn[split_fn.length - 1];
-            var mime_type = 
-            
-            response.writeHead(200, {'Content-Type': mime_types[extension]});
-            response.write(file, "binary");
-            response.end();
-        });
-    });
-}
+var staticServer = new (static.Server)('./static', { cache: 10 });
 
 var amqp_conn = amqp.createConnection({ host: 'pepe.home.bravo5.org' });
 
@@ -130,7 +95,20 @@ amqp_conn.on("error", function () {
     console.log("amqp connection error");
 });
 
-var http_server = http.createServer(static_request_handler);
+var http_server = http.createServer(function(request, response) {
+    request.addListener('end', function () {
+        // Serve files
+        staticServer.serve(request, response, function (err, res) {
+            if (err) { // An error as occured
+                console.error("> Error serving " + request.url + " - " + err.message);
+                response.writeHead(err.status, err.headers);
+                response.end();
+            } else { // The file was served successfully
+                console.log("> " + request.url + " - " + res.message);
+            }
+        });
+    });
+});
 
 var io = socket_io.listen(http_server, {'log level' : 2});
 

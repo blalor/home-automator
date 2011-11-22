@@ -75,12 +75,14 @@ Several libraries are required:
 * [socket.io][socketio] version 0.8.7
 * [amqp][node-amqp] version 0.1.1
 * [node-uuid][node-uuid] version 1.2.0
+* [node-static][node-static] version 0.5.9
 
 Just install these in the current directory with [npm][npm]
 
     $ npm install socket.io@0.8.7
     $ npm install amqp@0.1.1
     $ npm install node-uuid@1.2.0
+    $ npm install node-static@0.5.9
 
 Then:
 
@@ -88,7 +90,7 @@ Then:
 
 ### Furnace Timer UI
 
-Simple HTML and jQuery iPhone web app.  Start the `amqp_socketio_bridge.js` and point your browser to [http://localhost:8000/](http://localhost:8000/).
+Simple HTML and jQuery iPhone web app.  Start the `amqp_socketio_bridge.js` and point your browser to [http://localhost:8000/furnace_timer/](http://localhost:8000/furnace_timer/).
 
 <img src="https://github.com/blalor/home-automator/wiki/images/furnace%20timer%20screenshot.png" width="320" height="480" />
 
@@ -103,4 +105,5 @@ Simple HTML and jQuery iPhone web app.  Start the `amqp_socketio_bridge.js` and 
 [socketio]: http://socket.io/
 [node-amqp]: http://github.com/postwait/node-amqp
 [node-uuid]: http://github.com/broofa/node-uuid
+[node-static]: http://github.com/cloudhead/node-static
 [npm]: http://npmjs.org/
