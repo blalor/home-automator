@@ -76,6 +76,7 @@ Several libraries are required:
 * [amqp][node-amqp] version 0.1.1
 * [node-uuid][node-uuid] version 1.2.0
 * [node-static][node-static] version 0.5.9
+* [log4js][log4js] version 0.4.0
 
 Just install these in the current directory with [npm][npm]
 
@@ -83,6 +84,7 @@ Just install these in the current directory with [npm][npm]
     $ npm install amqp@0.1.1
     $ npm install node-uuid@1.2.0
     $ npm install node-static@0.5.9
+    $ npm install log4js@0.4.0
 
 Then:
 
@@ -107,3 +109,4 @@ Simple HTML and jQuery iPhone web app.  Start the `amqp_socketio_bridge.js` and 
 [node-uuid]: http://github.com/broofa/node-uuid
 [node-static]: http://github.com/cloudhead/node-static
 [npm]: http://npmjs.org/
+[log4js]: http://github.com/csausdev/log4js-node

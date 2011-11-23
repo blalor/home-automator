@@ -1,0 +1,22 @@
+{
+    "appenders": [
+        {
+            "type": "logLevelFilter",
+            "level": "INFO",
+            "appender": {
+                "type": "console"
+            }
+        },
+        {
+            "type": "file",
+            "filename": "server.log",
+            "maxLogSize": 5242880,
+            "backups": 3
+        }
+    ],
+    "levels" : {
+        "[default]" : "DEBUG",
+        "socket.io" : "INFO",
+        "amqp" : "TRACE"
+    }
+}

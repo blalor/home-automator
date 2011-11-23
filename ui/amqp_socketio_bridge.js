@@ -62,6 +62,13 @@
     });
 **/
 
+var log4js = require('log4js');
+log4js.configure('log4js.json', {reloadSecs : 5});
+
+var logger = log4js.getLogger();
+var amqp_logger = log4js.getLogger('amqp');
+var http_logger = log4js.getLogger('http');
+
 var amqp = require('amqp');
 var socket_io = require('socket.io');
 var uuid = require('node-uuid');
@@ -88,11 +95,11 @@ var amqp_conn = amqp.createConnection({ host: 'pepe.home.bravo5.org' });
 
 // Wait for connection to become established.
 amqp_conn.on("ready", function () {
-    console.log("amqp connection made");
+    amqp_logger.info("connection made");
 });
 
 amqp_conn.on("error", function () {
-    console.log("amqp connection error");
+    amqp_logger.error("connection error");
 });
 
 var http_server = http.createServer(function(request, response) {
@@ -100,37 +107,58 @@ var http_server = http.createServer(function(request, response) {
         // Serve files
         staticServer.serve(request, response, function (err, res) {
             if (err) { // An error as occured
-                console.error("> Error serving " + request.url + " - " + err.message);
+                http_logger.error("Error serving " + request.url + " - " + err.message);
                 response.writeHead(err.status, err.headers);
                 response.end();
             } else { // The file was served successfully
-                console.log("> " + request.url + " - " + res.message);
+                http_logger.debug(request.url + " - " + res.message);
             }
         });
     });
 });
 
-var io = socket_io.listen(http_server, {'log level' : 2});
+// just because I can…
+http_server.on('connection', function(socket) {
+    var remoteAddr = socket.remoteAddress;
+    
+    http_logger.debug("connection from " + remoteAddr);
+    
+    socket.on('close', function(had_error) {
+        if (had_error) {
+            http_logger.error("connection from " + remoteAddr + " closed with error");
+        } else {
+            http_logger.debug("connection from " + remoteAddr + " closed");
+        }
+    });
+});
+
+var io = socket_io.listen(
+    http_server,
+    {
+        // logger : log4js.getLogger('socket.io'),
+        // 'log level' : log4js.levels.WARN
+        'log level' : 2
+    }
+);
 
 io.sockets.on('connection', function (socket) {
-    console.log("client connected");
+    logger.info("client connected");
     
     // Create a queue of our very own
     var q = amqp_conn.queue('', {exclusive: true}, function(the_queue) {
-        console.log("queue subscribed");
+        amqp_logger.trace("queue subscribed");
         
         // dispatch received messages (or RPC replies) to the client
         // queue is not bound, yet
         q.subscribe(function (message, headers, deliveryInfo) {
             
-            // console.log([message, headers, deliveryInfo]);
+            amqp_logger.trace([message, headers, deliveryInfo]);
             
             // if the content-type is application/json, no parsing is needed
             
             if (deliveryInfo.correlationId) {
                 // this is an RPC reply
-                console.log("got rpc reply for " + deliveryInfo.correlationId);
-                console.log(message);
+                amqp_logger.trace("rpc reply for " + deliveryInfo.correlationId, message);
                 
                 // message : { result: { foo: 'bar' } },
                 // headers : {},
@@ -154,8 +182,7 @@ io.sockets.on('connection', function (socket) {
                 )
             }
             else {
-                // console.log("got normal message");
-                // console.log(message);
+                amqp_logger.trace("got normal message", message);
                 
                 // message : {
                 //     timestamp: '2011-11-20T14:54:30.177785+00:00',
@@ -188,18 +215,17 @@ io.sockets.on('connection', function (socket) {
         socket.emit('ready');
     });
     
-    // q.on("error", function (e) {
-    //     console.log("amqp queue error");
-    //     console.dir(e);
-    // });
-    // 
-    // q.on("close", function () {
-    //     console.log("amqp queue closed");
-    // });
-    // 
-    // q.on("open", function () {
-    //     console.log("amqp queue opened");
-    // });
+    q.on("error", function (e) {
+        amqp_logger.error("queue error", e);
+    });
+    
+    q.on("close", function () {
+        amqp_logger.warn("queue closed");
+    });
+    
+    q.on("open", function () {
+        amqp_logger.info("queue opened");
+    });
     
     // store it for later retrieval
     socket.set('queue', q);
@@ -216,7 +242,7 @@ io.sockets.on('connection', function (socket) {
             for (var t_ind = 0; t_ind < data.topics.length; t_ind++) {
                 var topic = data.topics[t_ind];
                 
-                console.log("binding to " + data.exchange + " " + topic);
+                amqp_logger.debug("binding to " + data.exchange + " " + topic);
                 q.bind(data.exchange, topic);
             }
         });
@@ -233,12 +259,10 @@ io.sockets.on('connection', function (socket) {
         //     queue :
         // }
         
-        // console.log('got rpc_request');
-        // console.dir({rpc_req_msg:rpc_req_msg, ack:ack});
-        
         socket.get('queue', function(err, q) {
             var ticket = uuid();
-            console.log("ticket: " + ticket);
+            
+            amqp_logger.trace('got rpc_request', {rpc_req_msg:rpc_req_msg, ack:ack, ticket:ticket});
             
             // make sure args is an array of values
             args = [];
@@ -272,18 +296,19 @@ io.sockets.on('connection', function (socket) {
     });
     
     socket.on('disconnect', function(arg) {
-        console.log('client disconnected');
+        logger.info('client disconnected');
         
         socket.get('queue', function(err, q) {
-            console.log("destroying queue");
+            amqp_logger.debug("destroying queue");
             
             try {
                 q.destroy();
             } catch (ex) {
-                console.error(ex);
+                amqp_logger.error("exception destroying queue", ex);
             }
         });
     });
 });
 
+logger.info("listening");
 http_server.listen(8000);
