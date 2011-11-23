@@ -135,9 +135,8 @@ http_server.on('connection', function(socket) {
 var io = socket_io.listen(
     http_server,
     {
-        // logger : log4js.getLogger('socket.io'),
-        // 'log level' : log4js.levels.WARN
-        'log level' : 2
+        logger : log4js.getLogger('socket.io'),
+        'log level' : log4js.levels.INFO
     }
 );
 

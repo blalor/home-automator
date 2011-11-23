@@ -17,6 +17,6 @@
     "levels" : {
         "[default]" : "DEBUG",
         "socket.io" : "INFO",
-        "amqp" : "TRACE"
+        "amqp" : "DEBUG"
     }
 }
