@@ -9,17 +9,20 @@ body {
     padding: 0; /* Amount of negative space around the inside of the body */
 }
 
-h1 {
+#header {
     text-align: center;
     font-size: 14px;
 }
 
 #chart {
     width: 100%;
-    height: 100%;
+    
+    /* why isn't 100% working? even 410px doesn't completely fill the chart on the iPhone4, whose body.innerHeight shows 428 */
+    height: 410px;
 }
 
 #footer {
+/*    background-color: #0f0;*/
     position: absolute;
     width: 100%;
     

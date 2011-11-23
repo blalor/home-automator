@@ -172,4 +172,6 @@ $(document).ready(function() {
             topics: ['electric_meter', 'furnace']
         });
     });
+    
+    // $("#footer").text($("body").innerHeight());
 });
