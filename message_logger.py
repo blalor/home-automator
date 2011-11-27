@@ -1,25 +1,32 @@
 #!/usr/bin/env python
 # encoding: utf-8
 """
-sensor_data_listener.py
+message_logger.py
 
 Created by Brian Lalor on 2011-10-30.
-Copyright (c) 2011 __MyCompanyName__. All rights reserved.
+
+Pickles all received messages from all configured exchanges into a file.  To 
+be used for message analysis and sample data for public examples.
 """
 
 import sys
 import os
 
 import pika
-import json
 
 from pprint import pprint
 from config import config_data as config
+
+import cPickle as pickle
+from datetime import datetime
 
 class Listener(object):
     # {{{ __init__
     def __init__(self):
         super(Listener, self).__init__()
+        
+        self.ofp = open("logs/captured_messages.p", "ab", 0)
+        self.pickler = pickle.Pickler(self.ofp, pickle.HIGHEST_PROTOCOL)
         
         self._connection = pika.BlockingConnection(
             pika.ConnectionParameters(host=config.message_broker.host)
@@ -36,16 +43,29 @@ class Listener(object):
                                     no_ack = True)
         
         # listen for all messages
-        self._channel.queue_bind(exchange = 'sensor_data',
-                                 queue = self._queue_name,
-                                 routing_key = "#")
+        for exchange in config.message_broker.exchanges:
+            self._channel.queue_bind(exchange = exchange,
+                                     queue = self._queue_name,
+                                     routing_key = "#")
         
     
     # }}}
     
     # {{{ handle_packet
     def handle_packet(self, channel, method, properties, body):
-        pprint((method, properties, json.loads(body)))
+        p = {
+            'timestamp': datetime.now(),
+            'method': { # Basic.Deliver can't be pickled
+                'routing_key' : method.routing_key,
+                'exchange' : method.exchange,
+            },
+            'properties' : properties,
+            'body' : body,
+        }
+        
+        # pprint(p)
+        self.pickler.dump(p)
+        self.ofp.flush()
     
     # }}}
     
