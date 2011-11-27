@@ -83,10 +83,6 @@ class XBeeDispatcher(object):
         self._xb_rx_conn = pika.BlockingConnection(connection_params)
         
         self._xb_rx_chan = self._xb_rx_conn.channel()
-        self._xb_rx_chan.exchange_declare(
-            exchange = self.RAW_XBEE_PACKET_EXCHANGE,
-            type = 'topic'
-        )
         
         # set up connection/channel for receiving frames to be sent to 
         # XBee devices

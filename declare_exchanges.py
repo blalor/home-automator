@@ -23,6 +23,7 @@ def main():
         
         print "declaring exchange", exchg
         
+        channel.exchange_delete(exchange = exchg)
         channel.exchange_declare(exchange = exchg, type = exchg_data.type)
     
     connection.close()
