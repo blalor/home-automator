@@ -418,65 +418,70 @@ class BaseConsumer(object):
     
     # {{{ __run_thread
     def __run_thread(self):
-        self.__main_thread_name = threading.currentThread().name
-        
-        # connection/channel for working with raw packets
-        self.__xb_frame_conn = self._create_broker_connection()
-        self.__xb_frame_chan = self.__xb_frame_conn.channel()
-        
-        # channel for transmitting XBee frames
-        self.__rpc_conn = self._create_broker_connection()
-        self.__rpc_chan = self.__rpc_conn.channel()
-        self.__rpc_chan_lock = threading.RLock()
-        
-        
-        # channel and connection for publishing sensor data and events
-        self.__publisher_conn = self._create_broker_connection()
-        self.__publisher_chan = self.__xb_frame_conn.channel()
-        self.__publisher_chan_lock = threading.RLock()
-        
-        # create new queue exclusively for us (channel is arbitrary)
-        self.__queue_name = self.__xb_frame_chan.queue_declare(exclusive = True).method.queue
-        
-        # configure callback for all packets
-        self.__xb_frame_chan.basic_consume(self.__on_receive_packet,
-                                           queue = self.__queue_name,
-                                           no_ack = True)
-        
-        # bind routing keys to queue
-        for addr in self._xbee_addresses:
-            self.__xb_frame_chan.queue_bind(exchange = 'raw_xbee_frames',
-                                            queue = self.__queue_name,
-                                            routing_key = '*.' + addr.lower())
-        
-        
-        if self.__rpc_queue_map:
-            self.__rpc_worker.start()
+        try:
+            self.__main_thread_name = threading.currentThread().name
             
-            # need a separate channel for RPC requests so that they can be ack'd
-            self._logger.debug("creating channel for RPC requests")
+            # connection/channel for working with raw packets
+            self.__xb_frame_conn = self._create_broker_connection()
+            self.__xb_frame_chan = self.__xb_frame_conn.channel()
             
-            self.__rpc_receive_chan = self.__xb_frame_conn.channel()
+            # channel for transmitting XBee frames
+            self.__rpc_conn = self._create_broker_connection()
+            self.__rpc_chan = self.__rpc_conn.channel()
+            self.__rpc_chan_lock = threading.RLock()
             
-            self.__rpc_receive_chan.basic_qos(prefetch_count=1)
             
-            # declare all RPC queues configured via _register_rpc_function.
-            # do this on __rpc_receive_chan to direct all incoming messags to 
-            # __on_receive_rpc_request
-            for queue in self.__rpc_queue_map:
-                self._logger.debug("creating RPC queue %s", queue)
+            # channel and connection for publishing sensor data and events
+            self.__publisher_conn = self._create_broker_connection()
+            self.__publisher_chan = self.__xb_frame_conn.channel()
+            self.__publisher_chan_lock = threading.RLock()
+            
+            # create new queue exclusively for us (channel is arbitrary)
+            self.__queue_name = self.__xb_frame_chan.queue_declare(exclusive = True).method.queue
+            
+            # configure callback for all packets
+            self.__xb_frame_chan.basic_consume(self.__on_receive_packet,
+                                               queue = self.__queue_name,
+                                               no_ack = True)
+            
+            # bind routing keys to queue
+            for addr in self._xbee_addresses:
+                self.__xb_frame_chan.queue_bind(exchange = 'raw_xbee_frames',
+                                                queue = self.__queue_name,
+                                                routing_key = '*.' + addr.lower())
+            
+            
+            if self.__rpc_queue_map:
+                self.__rpc_worker.start()
                 
-                self.__rpc_receive_chan.queue_declare(
-                    queue = queue,
-                    exclusive = True
-                )
+                # need a separate channel for RPC requests so that they can be ack'd
+                self._logger.debug("creating channel for RPC requests")
                 
-                self.__rpc_receive_chan.basic_consume(
-                    self.__on_receive_rpc_request,
-                    queue = queue
-                )
+                self.__rpc_receive_chan = self.__xb_frame_conn.channel()
+                
+                self.__rpc_receive_chan.basic_qos(prefetch_count=1)
+                
+                # declare all RPC queues configured via _register_rpc_function.
+                # do this on __rpc_receive_chan to direct all incoming messags to 
+                # __on_receive_rpc_request
+                for queue in self.__rpc_queue_map:
+                    self._logger.debug("creating RPC queue %s", queue)
+                    
+                    self.__rpc_receive_chan.queue_declare(
+                        queue = queue,
+                        exclusive = True
+                    )
+                    
+                    self.__rpc_receive_chan.basic_consume(
+                        self.__on_receive_rpc_request,
+                        queue = queue
+                    )
+            
+            self.__xb_frame_chan.start_consuming()
+        except:
+            self._logger.critical("unhandled exception in __run_thread", exc_info = True)
+            # thread will exit
         
-        self.__xb_frame_chan.start_consuming()
     
     # }}}
     
