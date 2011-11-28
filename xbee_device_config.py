@@ -10,7 +10,9 @@ Copyright (c) 2010 __MyCompanyName__. All rights reserved.
 import sys
 import getopt
 
-import socket, XBeeProxy
+import consumer
+import threading
+import logging
 
 import logging
 
@@ -18,10 +20,6 @@ from pprint import pprint
 
 help_message = '''
 
-    required:
-        --host=<hostname>
-        --port=<port>
-    
     querying:
         --query-all=<long_address> : queries all parameters of the device
     
@@ -131,12 +129,22 @@ ALL_PARAMETERS = (
     'PO',
 )
 
-def addr_to_bin(addr):
-    return "".join(chr(int(x, 16)) for x in addr.split(":"))
-
-
 class Usage(Exception):
     pass
+
+
+class Gateway(consumer.BaseConsumer):
+    def __init__(self):
+        super(Gateway, self).__init__('ALL')
+    
+    
+    def handle_packet(self, formatted_addr, packet):
+        pass
+    
+    
+    def remote_at(self, dest, command, param_val = None):
+        return self._send_remote_at(dest, command, param_val, give_me_the_frame = True)
+    
 
 
 def main(argv=None):
@@ -151,9 +159,6 @@ def main(argv=None):
     
     query_addr = None
     
-    host = None
-    port = None
-    
     try:
         try:
             opts, args = getopt.getopt(
@@ -165,8 +170,7 @@ def main(argv=None):
                  "query-all=",
                  "config-file=",
                  "point-to-me",
-                 "write",
-                 "host=", "port="]
+                 "write"]
             )
         except getopt.error, msg:
             raise Usage(msg)
@@ -188,21 +192,12 @@ def main(argv=None):
             if option in ("--config-file", "-f"):
                 config_file = value
             
-            if option in ("--host", "-H"):
-                host = value
-            
-            if option in ("--port", "-P"):
-                port = int(value)
-            
             if option in ("--point-to-me",):
                 point_to_me = True
             
             if option in ("--write",):
                 write_to_nvram = True
             
-        
-        if (host == None) or (port == None):
-            raise Usage("must specify port and host")
         
         if (set_addr != None) and set_all:
             raise Usage("set and set-all are mutually exclusive")
@@ -218,18 +213,20 @@ def main(argv=None):
         
         
     except Usage, err:
-        print >> sys.stderr, sys.argv[0].split("/")[-1] + ": " + str(err.msg)
+        print >> sys.stderr, sys.argv[0].split("/")[-1] + ": " + str(err.message)
         print >> sys.stderr, "\t for help use --help"
         return 2
     
     
-    _socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    _socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-    _socket.connect((host, port))
+    gw = Gateway()
     
-    xbee = XBeeProxy.XBeeProxy(_socket)
+    gw_thread = threading.Thread(target = gw.process_forever, name = "gw_proc")
+    gw_thread.daemon = True
+    gw_thread.start()
     
-    frame_id = chr(1)
+    logging.debug("waiting for consumer to be ready")
+    gw.ready_event.wait()
+    logging.info("ready")
     
     if (set_addr != None) or set_all:
         CONFIG_DATA = __import__(config_file).CONFIG_DATA
@@ -243,19 +240,14 @@ def main(argv=None):
         
         if point_to_me:
             # retrieve our SH and SL
-            xbee.at(command = 'SH', frame_id = '1')
-            xbee.at(command = 'SL', frame_id = '2')
             
-            while (SH == None) or (SL == None):
-                frame = xbee.wait_read_frame()
-                if (frame['id'] == 'at_response') and (frame['frame_id'] == '1') and (frame['command'] == 'SH'):
-                    SH = frame['parameter']
-                elif (frame['id'] == 'at_response') and (frame['frame_id'] == '2') and (frame['command'] == 'SL'):
-                    SL = frame['parameter']
-            
-        for section in sections:
-            logging.info("configuring %s", section)
-            addr = addr_to_bin(section)
+            # @todo this isn't really correct; address is for the coordinator,
+            # not the transmitting device
+            SH = gw.remote_at("00:00:00:00:00:00:00:00", "SH")['parameter']
+            SL = gw.remote_at("00:00:00:00:00:00:00:00", "SL")['parameter']
+        
+        for addr in sections:
+            logging.info("configuring %s", addr)
             
             if point_to_me:
                 CONFIG_DATA[section]['DH'] = SH
@@ -269,78 +261,66 @@ def main(argv=None):
                 
                 resend = True
                 while resend:
-                    frame_id = chr(ord(frame_id) + 1)
-                    xbee.remote_at(command = opt, frame_id = frame_id, dest_addr_long = addr, parameter = val)
+                    frame = gw.remote_at(section, opt, param_val = val)
                     
-                    while True:
-                        frame = xbee.wait_read_frame()
-                        logging.debug(str(frame))
-                        
-                        if (frame['id'] == 'remote_at_response') and \
-                           (frame['frame_id'] == frame_id) and \
-                           (frame['source_addr_long'] == addr):
-                           
-                            if frame['status'] == '\x00':
-                                resend = False
-                                logging.info("set %s = '%s'", opt, unicode(val, errors='replace'))
-                            elif frame['status'] == '\x04':
-                                logging.warn("timeout setting %s", opt)
-                            else:
-                                resend = False
-                                logging.error("error setting %s: %02X", opt, ord(frame['status']))
-                            
-                            break
-            
-            logging.debug('sending "AC"')
-            resend = True
-            while resend:
-                frame_id = chr(ord(frame_id) + 1)
-                xbee.remote_at(command = 'AC', frame_id = frame_id, dest_addr_long = addr)
-                
-                while True:
-                    frame = xbee.wait_read_frame()
                     logging.debug(str(frame))
                     
-                    if (frame['id'] == 'remote_at_response') and (frame['frame_id'] == frame_id) and (frame['source_addr_long'] == addr):
-                        if frame['status'] == '\x00':
-                            resend = False
-                            logging.info("changes applied")
-                        elif frame['status'] == '\x04':
-                            logging.warn("timeout sending AC")
-                        else:
-                            resend = False
-                            logging.error("error sending AC: %02X", ord(frame['status']))
-                        break
+                    if frame['status'] == '\x00':
+                        resend = False
+                        logging.info("set %s = '%s'", opt, unicode(val, errors='replace'))
+                    elif frame['status'] == '\x04':
+                        logging.warn("timeout setting %s", opt)
+                    else:
+                        resend = False
+                        logging.error("error setting %s: %02X", opt, ord(frame['status']))
+                    
+                    break
+            
+            logging.debug('sending "AC"')
+            
+            resend = True
+            while resend:
+                frame = gw.remote_at(section, 'AC')
+                
+                logging.debug(str(frame))
+                
+                if frame['status'] == '\x00':
+                    resend = False
+                    logging.info("changes applied")
+                elif frame['status'] == '\x04':
+                    logging.warn("timeout sending AC")
+                else:
+                    resend = False
+                    logging.error("error sending AC: %02X", ord(frame['status']))
+                
+                break
             
             if not write_to_nvram:
                 logging.warn("not writing changes")
             else:
                 logging.debug('writing changes')
+                
                 resend = True
                 while resend:
-                    frame_id = chr(ord(frame_id) + 1)
-                    xbee.remote_at(command = 'WR', frame_id = frame_id, dest_addr_long = addr)
+                    frame = gw.remote_at(section, 'WR')
                     
-                    while True:
-                        frame = xbee.wait_read_frame()
-                        logging.debug(str(frame))
-                        
-                        if (frame['id'] == 'remote_at_response') and (frame['frame_id'] == frame_id) and (frame['source_addr_long'] == addr):
-                            if frame['status'] == '\x00':
-                                resend = False
-                                logging.info("changes written")
-                            elif frame['status'] == '\x04':
-                                logging.warn("timeout sending WR")
-                            else:
-                                resend = False
-                                logging.error("error sending WR: %02X", ord(frame['status']))
-                            break
+                    logging.debug(str(frame))
+                    
+                    if frame['status'] == '\x00':
+                        resend = False
+                        logging.info("changes written")
+                    elif frame['status'] == '\x04':
+                        logging.warn("timeout sending WR")
+                    else:
+                        resend = False
+                        logging.error("error sending WR: %02X", ord(frame['status']))
+                    break
             
             
         
     else:
         # query
-        addr = addr_to_bin(query_addr)
+        addr = query_addr
         
         data = {}
         for opt in ALL_PARAMETERS:
@@ -349,45 +329,39 @@ def main(argv=None):
             
             resend = True
             while resend:
-                frame_id = chr(ord(frame_id) + 1)
-                xbee.remote_at(command = opt, frame_id = frame_id, dest_addr_long = addr)
+                frame = gw.remote_at(addr, opt)
                 
-                while True:
-                    frame = xbee.wait_read_frame()
-                    # print frame
-                    if (frame['id'] == 'remote_at_response') and (frame['frame_id'] == frame_id) and (frame['source_addr_long'] == addr):
-                        if frame['status'] == '\x00':
-                            resend = False
-                            if 'parameter' in frame:
-                                val = frame['parameter']
-                                # val = "0x" + "".join('%02X' % ord(x) for x in frame['parameter'])
-                                # print query_addr, opt, " ".join('%02X' % ord(x) for x in frame['parameter'])
-                                # print opt, val #, "(%d)" % int(val, 16)
-                                data[opt] = val
-                            else:
-                                logging.error("no parameter in frame for command %s! %s", opt, str(frame))
-                        elif frame['status'] == '\x04':
-                            logging.warn("timeout querying %s", opt)
-                        else:
-                            resend = False
-                            logging.error("error querying %s: %02X", opt, ord(frame['status']))
-                            
-                        break
+                if frame['status'] == '\x00':
+                    resend = False
+                    if 'parameter' in frame:
+                        val = frame['parameter']
+                        # val = "0x" + "".join('%02X' % ord(x) for x in frame['parameter'])
+                        # print query_addr, opt, " ".join('%02X' % ord(x) for x in frame['parameter'])
+                        # print opt, val #, "(%d)" % int(val, 16)
+                        data[opt] = val
+                    else:
+                        logging.error("no parameter in frame for command %s! %s", opt, str(frame))
+                elif frame['status'] == '\x04':
+                    logging.warn("timeout querying %s", opt)
+                else:
+                    resend = False
+                    # logging.error("error querying %s: %02X", opt, ord(frame['status']))
+                    # logged by BaseConsumer
+                    
+                break
                     
         pprint(data)
     
     logging.debug("cleaning up")
-    xbee.halt()
-    _socket.shutdown(socket.SHUT_RDWR)
-    _socket.close()
+    gw.shutdown()
+    gw_thread.join()
     logging.shutdown()
     
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s %(levelname)s %(name)s -- %(message)s',)
-                        # filename='uploader.log',
-                        # filemode='a')
+    from support import log_config
+    
+    log_config.init_logging_stdout(level = logging.INFO)
     
     sys.exit(main())

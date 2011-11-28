@@ -228,13 +228,17 @@ class BaseConsumer(object):
     """
     
     # {{{ __init__
+    # @param addrs tuple of addresses to receive frames for, or "ALL" to receive all
     def __init__(self, addrs = ('#')):
-        """
-        bindings is a tuple of <frame_type>.address strings
-        """
         super(BaseConsumer, self).__init__()
         
         self._logger = logging.getLogger(self.__class__.__name__)
+        
+        self.__allow_all_addrs = False
+        
+        if addrs == 'ALL':
+            self.__allow_all_addrs = True
+            addrs = ('#')
         
         self._xbee_addresses = addrs
         
@@ -321,7 +325,7 @@ class BaseConsumer(object):
         assert self.__main_thread_name != threading.currentThread().name, \
             "DEADLOCK: spawn a new thread"
         
-        if dest not in self._xbee_addresses:
+        if (not self.__allow_all_addrs) and (dest not in self._xbee_addresses):
             raise InvalidDestination("destination address %s is not configured for this consumer" % dest)
         
         req = XBeeRequest(dest, msg_body)
@@ -352,7 +356,7 @@ class BaseConsumer(object):
     # }}}
     
     # {{{ _send_remote_at
-    def _send_remote_at(self, dest, command, param_val = None):
+    def _send_remote_at(self, dest, command, param_val = None, give_me_the_frame = False):
         frame = self.__send_xb_frame(
             dest,
             {
@@ -385,7 +389,11 @@ class BaseConsumer(object):
                 # remote command transmission failed
                 self._logger.error("remote AT command %s transmission failed", command)
         
-        return success
+        # @todo ugh, such a kludge! sometimes I really need the frame!
+        if give_me_the_frame:
+            return frame
+        else:
+            return success
     
     # }}}
     
