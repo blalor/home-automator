@@ -69,7 +69,7 @@ class XBeeDispatcher(object):
         self.__serial_port = serial_port
         self.__baudrate = baudrate
         
-        connection_params = pika.ConnectionParameters(host = broker_host)
+        self.__connection_params = pika.ConnectionParameters(host = broker_host)
         
         self.xbee = None
         
@@ -77,21 +77,6 @@ class XBeeDispatcher(object):
         
         self.__correlations = {}
         self.__correlation_lock = threading.RLock()
-        
-        # set up connection/channel for sending received XBee packets to the
-        # broker
-        self._xb_rx_conn = pika.BlockingConnection(connection_params)
-        
-        self._xb_rx_chan = self._xb_rx_conn.channel()
-        
-        # set up connection/channel for receiving frames to be sent to 
-        # XBee devices
-        self._xb_tx_conn = pika.BlockingConnection(connection_params)
-        
-        self._xb_tx_chan = self._xb_tx_conn.channel()
-        self._xb_tx_chan.queue_declare(queue = 'xbee_tx')
-        self._xb_tx_chan.basic_qos(prefetch_count = 1)
-        self._xb_tx_chan.basic_consume(self.__handle_xb_tx, queue = 'xbee_tx')
     
     # }}}
     
@@ -238,9 +223,24 @@ class XBeeDispatcher(object):
                             baudrate = self.__baudrate,
                             rtscts=True)
         
+        # set up connection/channel for sending received XBee packets to the
+        # broker
+        self._xb_rx_conn = pika.BlockingConnection(self.__connection_params)
+        self._xb_rx_chan = self._xb_rx_conn.channel()
+        
+        # ok, RX channel is created, so we can safely fire up the XBee thread
         self.xbee = xbee.XBee(ser,
                               shorthand = True,
                               callback = self.__dispatch_xb_frame)
+        
+        # set up connection/channel for receiving frames to be sent to 
+        # XBee devices
+        self._xb_tx_conn = pika.BlockingConnection(self.__connection_params)
+        
+        self._xb_tx_chan = self._xb_tx_conn.channel()
+        self._xb_tx_chan.queue_declare(queue = 'xbee_tx')
+        self._xb_tx_chan.basic_qos(prefetch_count = 1)
+        self._xb_tx_chan.basic_consume(self.__handle_xb_tx, queue = 'xbee_tx')
         
         try:
             self._xb_tx_chan.start_consuming()
