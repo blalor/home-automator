@@ -15,7 +15,7 @@ import os
 import pika
 
 # ../
-sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import config_data as config
 
 import cPickle as pickle
