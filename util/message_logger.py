@@ -14,18 +14,21 @@ import os
 
 import pika
 
-from pprint import pprint
+# ../
+sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
 from config import config_data as config
 
 import cPickle as pickle
+
 from datetime import datetime
+import pytz
 
 class Listener(object):
     # {{{ __init__
     def __init__(self):
         super(Listener, self).__init__()
         
-        self.ofp = open("logs/captured_messages.p", "ab", 0)
+        self.ofp = open("captured_messages.p", "ab", 0)
         self.pickler = pickle.Pickler(self.ofp, pickle.HIGHEST_PROTOCOL)
         
         self._connection = pika.BlockingConnection(
@@ -54,7 +57,7 @@ class Listener(object):
     # {{{ handle_packet
     def handle_packet(self, channel, method, properties, body):
         p = {
-            'timestamp': datetime.now(),
+            'timestamp': pytz.UTC.localize(datetime.utcnow()),
             'method': { # Basic.Deliver can't be pickled
                 'routing_key' : method.routing_key,
                 'exchange' : method.exchange,
@@ -63,9 +66,10 @@ class Listener(object):
             'body' : body,
         }
         
-        # pprint(p)
         self.pickler.dump(p)
         self.ofp.flush()
+        sys.stdout.write(".")
+        sys.stdout.flush()
     
     # }}}
     
