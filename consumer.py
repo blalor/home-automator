@@ -237,6 +237,9 @@ class BaseConsumer(object):
         self._logger = logging.getLogger(self.__class__.__name__)
         
         self._xbee_addresses = addrs
+        
+        self.ready_event = threading.Event()
+        
         self._connection_params = pika.ConnectionParameters(
             host = config.message_broker.host
         )
@@ -476,6 +479,9 @@ class BaseConsumer(object):
                         self.__on_receive_rpc_request,
                         queue = queue
                     )
+            
+            
+            self.ready_event.set()
             
             self.__xb_frame_chan.start_consuming()
         except:
