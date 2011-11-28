@@ -49,8 +49,12 @@ class SprinklerConsumer(consumer.BaseConsumer):
         
         dio_cmd = self.sprinkler_map[sprinkler_id]
         
-        if self._send_remote_at(self.xbee_address, command = dio_cmd, param_val = '\x05'):
-            success = self._send_remote_at(self.xbee_address, command = 'AC')
+        if self.check_remote_at_frame_status(
+            self._send_remote_at(self.xbee_address, command = dio_cmd, param_val = '\x05')
+        ):
+            success = self.check_remote_at_frame_status(
+                self._send_remote_at(self.xbee_address, command = 'AC')
+            )
         
         if success:
             self.__sprinkler_active[sprinkler_id] = True;
@@ -70,8 +74,12 @@ class SprinklerConsumer(consumer.BaseConsumer):
         
         dio_cmd = self.sprinkler_map[sprinkler_id]
         
-        if self._send_remote_at(self.xbee_address, command = dio_cmd, param_val = '\x04'):
-            success = self._send_remote_at(self.xbee_address, command = 'AC')
+        if self.check_remote_at_frame_status(
+            self._send_remote_at(self.xbee_address, command = dio_cmd, param_val = '\x04')
+        ):
+            success = self.check_remote_at_frame_status(
+                self._send_remote_at(self.xbee_address, command = 'AC')
+            )
         
         if success:
             self.__sprinkler_active[sprinkler_id] = False;

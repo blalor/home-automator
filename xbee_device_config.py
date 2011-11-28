@@ -141,10 +141,6 @@ class Gateway(consumer.BaseConsumer):
     def handle_packet(self, formatted_addr, packet):
         pass
     
-    
-    def remote_at(self, dest, command, param_val = None):
-        return self._send_remote_at(dest, command, param_val, give_me_the_frame = True)
-    
 
 
 def main(argv=None):
@@ -243,8 +239,8 @@ def main(argv=None):
             
             # @todo this isn't really correct; address is for the coordinator,
             # not the transmitting device
-            SH = gw.remote_at("00:00:00:00:00:00:00:00", "SH")['parameter']
-            SL = gw.remote_at("00:00:00:00:00:00:00:00", "SL")['parameter']
+            SH = gw._send_remote_at("00:00:00:00:00:00:00:00", "SH")['parameter']
+            SL = gw._send_remote_at("00:00:00:00:00:00:00:00", "SL")['parameter']
         
         for addr in sections:
             logging.info("configuring %s", addr)
@@ -261,7 +257,7 @@ def main(argv=None):
                 
                 resend = True
                 while resend:
-                    frame = gw.remote_at(section, opt, param_val = val)
+                    frame = gw._send_remote_at(section, opt, param_val = val)
                     
                     logging.debug(str(frame))
                     
@@ -280,7 +276,7 @@ def main(argv=None):
             
             resend = True
             while resend:
-                frame = gw.remote_at(section, 'AC')
+                frame = gw._send_remote_at(section, 'AC')
                 
                 logging.debug(str(frame))
                 
@@ -302,7 +298,7 @@ def main(argv=None):
                 
                 resend = True
                 while resend:
-                    frame = gw.remote_at(section, 'WR')
+                    frame = gw._send_remote_at(section, 'WR')
                     
                     logging.debug(str(frame))
                     
@@ -329,7 +325,7 @@ def main(argv=None):
             
             resend = True
             while resend:
-                frame = gw.remote_at(addr, opt)
+                frame = gw._send_remote_at(addr, opt)
                 
                 if frame['status'] == '\x00':
                     resend = False

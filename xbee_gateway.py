@@ -19,7 +19,7 @@ serialized with pickle; JSON doesn't support binary data.
 
 import sys, os
 import random
-import datetime
+import datetime, time
 import threading
 import logging
 
@@ -90,6 +90,25 @@ class XBeeDispatcher(object):
     
     # }}}
     
+    # {{{ __reap_unfinished_requests
+    def __reap_unfinished_requests(self):
+        with self.__correlation_lock:
+            expired_requests = []
+            
+            for frame_id in self.__correlations:
+                req = self.__correlations[frame_id]
+                
+                if time.time() > req['expiration']:
+                    self._logger.debug("reaping expired request %s", req['props'].correlation_id)
+                    expired_requests.append(frame_id)
+                
+            
+            for frame_id in expired_requests:
+                del self.__correlations[frame_id]
+            
+    
+    # }}}
+    
     # {{{ __handle_xb_tx
     def __handle_xb_tx(self, chan, method, props, body):
         ## no need for a connection lock since we're running in the main
@@ -112,9 +131,17 @@ class XBeeDispatcher(object):
             # response
             frame_id = self.__next_frame_id()
             
+            if props.headers == None:
+                props.headers = {}
+            
+            if 'keep_alive' not in props.headers:
+                props.headers['keep_alive'] = False
+            
             with self.__correlation_lock:
                 self.__correlations[frame_id] = {
                     'props' : props,
+                    'keep_alive' : bool(props.headers['keep_alive']),
+                    'expiration' : time.time() + 120,
                 }
             
             if req['method'] == 'send_remote_at':
@@ -167,7 +194,10 @@ class XBeeDispatcher(object):
                 
                 with self.__correlation_lock:
                     if frame['frame_id'] in self.__correlations:
-                        props = self.__correlations.pop(frame['frame_id'])['props']
+                        correlation = self.__correlations[frame['frame_id']]
+                        
+                        props = correlation['props']
+                        keep_alive = correlation['keep_alive']
                         
                         self._xb_rx_chan.basic_publish(
                             exchange = '',
@@ -178,11 +208,17 @@ class XBeeDispatcher(object):
                             ),
                             body = serialize(frame)
                         )
+                        
+                        if not keep_alive:
+                            del self.__correlations[frame['frame_id']]
+                        
                     else:
                         self._logger.error(
-                            "no correlation found for response: %s",
-                            str(frame)
+                            "no correlation found for response: %r", frame
                         )
+                
+                # this needs to get called every now and then
+                self.__reap_unfinished_requests()
             
             else:
                 frame_addr = 'unknown'

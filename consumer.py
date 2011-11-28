@@ -31,6 +31,10 @@ class InvalidSerializationContentType(Exception):
     pass
 
 
+class NoResponse(Exception):
+    pass
+
+
 # {{{ serialize
 def serialize(data):
     return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
@@ -83,7 +87,7 @@ class XBeeRequest(object):
     """Encapsulation of state data for transmitting outbound XBee frames"""
     
     # {{{ __init__
-    def __init__(self, dest, msg_body):
+    def __init__(self, dest, msg_body, async, timeout = None):
         super(XBeeRequest, self).__init__()
         
         self.ticket = str(uuid.uuid4())
@@ -91,8 +95,21 @@ class XBeeRequest(object):
         
         self.dest = dest
         self.msg_body = msg_body
+        self.async = async
+        
+        if timeout == None:
+            timeout = 120
+        
+        # request expires in 2 minutes
+        self.__expiration = time.time() + timeout
         
         self.response = None
+    
+    # }}}
+    
+    # {{{ is_expired
+    def is_expired(self):
+         return time.time() > self.__expiration
     
     # }}}
     
@@ -318,8 +335,40 @@ class BaseConsumer(object):
     
     # }}}
     
+    # {{{ check_frame_status
+    @staticmethod
+    def check_remote_at_frame_status(frame):
+        # frame id should be remote_at_response
+        
+        command = frame['command']
+        success = False
+        
+        if frame['status'] == '\x00':
+            # success!
+            success = True
+            self._logger.debug("successfully sent remote AT command %s", command)
+        elif frame['status'] == '\x01':
+            # error
+            self._logger.error("unspecified error sending remote AT command %s", command)
+        elif frame['status'] == '\x02':
+            # invalid command
+            self._logger.error("invalid command sending remote AT command %s", command)
+        elif frame['status'] == '\x03':
+            # invalid parameter
+            self._logger.error("invalid parameter sending remote AT command %s", command)
+        elif frame['status'] == '\x04':
+            # remote command transmission failed
+            self._logger.error("remote AT command %s transmission failed", command)
+        
+        return success
+    
+    # }}}
+    
     # {{{ __send_xb_frame
-    def __send_xb_frame(self, dest, msg_body):
+    # if async is true, let the main message handler deal with the responses.
+    # this is to facilitate commands which might return multiple responses, 
+    # like the ND (node discover) remote AT command
+    def __send_xb_frame(self, dest, msg_body, async = False, timeout = None):
         """dest is a formatted address"""
         
         assert self.__main_thread_name != threading.currentThread().name, \
@@ -328,72 +377,54 @@ class BaseConsumer(object):
         if (not self.__allow_all_addrs) and (dest not in self._xbee_addresses):
             raise InvalidDestination("destination address %s is not configured for this consumer" % dest)
         
-        req = XBeeRequest(dest, msg_body)
+        req = XBeeRequest(dest, msg_body, async, timeout)
         
         with self.__pending_xb_requests_lock:
             self.__pending_xb_requests[req.ticket] = req
         
         with self.__rpc_chan_lock:
+            # keep_alive tells the remote end to keep the request around for 
+            # multiple replies
             self.__rpc_chan.basic_publish(
                 exchange = '',
                 routing_key = 'xbee_tx',
                 properties = pika.BasicProperties(
                     reply_to = self.__queue_name,
                     correlation_id = req.ticket,
-                    content_type = 'application/x-python-pickle'
+                    content_type = 'application/x-python-pickle',
+                    headers = dict(keep_alive = str(async))
                 ),
                 body = serialize(req.msg_body)
             )
         
-        # wait 30s for the reply to our call to be received
-        req.event.wait(30)
-        
-        if not req.event.is_set():
-            self._logger.warn("no reply received for %s", req)
-        
-        return req.response
+        if not async:
+            # wait 30s for the reply to our call to be received
+            req.event.wait(30)
+            
+            if not req.event.is_set():
+                raise NoResponse("no reply received for %r" % req)
+            
+            return req.response
+        else:
+            return req
     
     # }}}
     
     # {{{ _send_remote_at
-    def _send_remote_at(self, dest, command, param_val = None, give_me_the_frame = False):
-        frame = self.__send_xb_frame(
+    def _send_remote_at(self, dest, command, param_val = None, async = False, timeout = None):
+        # if async is true, retVal is a request ticket, otherwise it's the 
+        # XBeeRequest instance
+        return self.__send_xb_frame(
             dest,
             {
                 'method' : 'send_remote_at',
                 'dest' : dest,
                 'command' : command,
                 'param_val' : param_val,
-            }
+            },
+            async,
+            timeout
         )
-        
-        success = False
-        
-        if frame != None:
-            # frame is guaranteed to have id == remote_at_response
-            
-            if frame['status'] == '\x00':
-                # success!
-                success = True
-                self._logger.debug("successfully sent remote AT command %s", command)
-            elif frame['status'] == '\x01':
-                # error
-                self._logger.error("unspecified error sending remote AT command %s", command)
-            elif frame['status'] == '\x02':
-                # invalid command
-                self._logger.error("invalid command sending remote AT command %s", command)
-            elif frame['status'] == '\x03':
-                # invalid parameter
-                self._logger.error("invalid parameter sending remote AT command %s", command)
-            elif frame['status'] == '\x04':
-                # remote command transmission failed
-                self._logger.error("remote AT command %s transmission failed", command)
-        
-        # @todo ugh, such a kludge! sometimes I really need the frame!
-        if give_me_the_frame:
-            return frame
-        else:
-            return success
     
     # }}}
     
@@ -409,19 +440,18 @@ class BaseConsumer(object):
         )
         
         success = False
-                
-        if frame != None:
-            # frame is guaranteed to have id == zb_tx_status
-            
-            if frame['delivery_status'] == '\x00':
-                # success!
-                success = True
-                self._logger.debug("sent data with %d retries", ord(frame['retries']))
-            else:
-                self._logger.warn(
-                    "send failed after %d retries with status 0x%2X",
-                    ord(frame['retries']), ord(frame['delivery_status'])
-                )
+        
+        # frame is guaranteed to have id == zb_tx_status
+        
+        if frame['delivery_status'] == '\x00':
+            # success!
+            success = True
+            self._logger.debug("sent data with %d retries", ord(frame['retries']))
+        else:
+            self._logger.warn(
+                "send failed after %d retries with status 0x%2X",
+                ord(frame['retries']), ord(frame['delivery_status'])
+            )
         
         return success
     
@@ -503,13 +533,23 @@ class BaseConsumer(object):
     def process_forever(self):
         self.__shutdown_event = threading.Event()
         
-        t = threading.Thread(target = self.__run_thread, name = "proc_4evr")
+        proc_4evr = threading.Thread(target = self.__run_thread, name = "proc_4evr")
         # t.daemon = True
-        t.start()
+        proc_4evr.start()
+        
+        def reaper():
+            while True:
+                self.__reap_unfinished_requests()
+                time.sleep(2)
+            
+        
+        reaper_thread = threading.Thread(target = reaper, name = "reaper")
+        reaper_thread.daemon = True
+        reaper_thread.start()
         
         while True:
-            if not t.is_alive():
-                self._logger.critical("thread %s died", t.name)
+            if not proc_4evr.is_alive():
+                self._logger.critical("thread %s died", proc_4evr.name)
                 break
             
             if self.__shutdown_event.is_set():
@@ -608,13 +648,19 @@ class BaseConsumer(object):
             # this is a reply
             with self.__pending_xb_requests_lock:
                 if props.correlation_id in self.__pending_xb_requests:
-                    req = self.__pending_xb_requests.pop(props.correlation_id)
+                    req = self.__pending_xb_requests[props.correlation_id]
                     
-                    req.response = frame
-                    req.event.set()
+                    if not req.async:
+                        self.finish_async_request(req, frame)
+                    else:
+                        self.handle_async_reply(req, frame)
+                    
                 else:
                     self._logger.error("got %s reply for unknown correlation %s: %s",
                                        frame['id'], props.correlation_id, frame)
+            
+            # this needs to get called every now and then
+            self.__reap_unfinished_requests()
             
         else:
             # standard raw packet; guaranteed  to have a routing_key of the form
@@ -633,6 +679,35 @@ class BaseConsumer(object):
     def handle_packet(self, formatted_addr, packet):
         ## for testing only; subclasses should override
         self._logger.debug(unicode(str(packet), errors='replace'))
+    
+    # }}}
+    
+    # {{{ finish_async_request
+    def finish_async_request(self, req, frame = None):
+        if frame:
+            req.response = frame
+        
+        req.event.set()
+        
+        del self.__pending_xb_requests[req.ticket]
+    
+    # }}}
+    
+    # {{{ __reap_unfinished_requests
+    def __reap_unfinished_requests(self):
+        with self.__pending_xb_requests_lock:
+            for req in self.__pending_xb_requests.values():
+                if req.is_expired():
+                    self._logger.warn("expiring %r", req)
+                    
+                    self.finish_async_request(req)
+    
+    # }}}
+    
+    # {{{ handle_async_reply
+    def handle_async_reply(self, req, frame):
+        ## for testing only; subclasses should override
+        self._logger.debug("request %r, frame %r", req, frame)
     
     # }}}
     
