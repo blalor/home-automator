@@ -371,19 +371,19 @@ class BaseConsumer(object):
             if frame['status'] == '\x00':
                 # success!
                 success = True
-                self._logger.debug("successfully sent remote AT command")
+                self._logger.debug("successfully sent remote AT command %s", command)
             elif frame['status'] == '\x01':
                 # error
-                self._logger.error("unspecified error sending remote AT command")
+                self._logger.error("unspecified error sending remote AT command %s", command)
             elif frame['status'] == '\x02':
                 # invalid command
-                self._logger.error("invalid command sending remote AT command")
+                self._logger.error("invalid command sending remote AT command %s", command)
             elif frame['status'] == '\x03':
                 # invalid parameter
-                self._logger.error("invalid parameter sending remote AT command")
+                self._logger.error("invalid parameter sending remote AT command %s", command)
             elif frame['status'] == '\x04':
                 # remote command transmission failed
-                self._logger.error("remote AT command transmission failed")
+                self._logger.error("remote AT command %s transmission failed", command)
         
         return success
     
