@@ -14,26 +14,75 @@ import consumer
 import threading
 import logging
 
-import logging
-
 from pprint import pprint
 
 import struct
 
+from datetime import datetime
+import pytz
+
+UTC = pytz.UTC
+
 def format_addr(bytes):
     return ":".join(['%02x' % ord(y) for y in bytes])
 
+
+class NodeDetails(object):
+    def __init__(self, node_id):
+        super(NodeDetails, self).__init__()
+        self.node_id = node_id
+        
+        self.frame_count = 0
+        self.last_frame = None
     
+
+
 class Gateway(consumer.BaseConsumer):
     def __init__(self):
         super(Gateway, self).__init__('ALL')
         self.async_replies = {}
+        
+        ## the nodes we've discovered
+        self.__node_details = {}
+        
+        self._register_rpc_function('zb_net_monitor', self.discover_nodes)
+        self._register_rpc_function('zb_net_monitor', self.get_discovered_nodes)
+        self._register_rpc_function('zb_net_monitor', self.get_node_details)
     
     
+    # {{{ discover_nodes
+    def discover_nodes(self):
+        req = gw._send_remote_at("00:00:00:00:00:00:00:00", "ND", async = True)
+        
+    # }}}
+    
+    # {{{ get_discovered_nodes
+    def get_discovered_nodes(self)::
+        return self.__node_details.keys()
+    
+    # }}}
+    
+    # {{{ get_node_details
+    def get_node_details(self, node_id):
+        return self.__node_details[node_id]
+    
+    # }}}
+    
+    # {{{ handle_packet
     def handle_packet(self, formatted_addr, packet):
-        pass
+        node = None
+        
+        if formatted_addr not in self.__node_details:
+            node = self.__node_details[formatted_addr]
+        else:
+            node = Node(formatted_addr)
+        
+        node.frame_count += 1
+        node.last_frame = UTC.localize(datetime.utcnow())
     
+    # }}}
     
+    # {{{ handle_async_reply
     def handle_async_reply(self, req, frame):
         if frame['command'] not in self.async_replies:
             self.async_replies[frame['command']] = []
@@ -97,6 +146,7 @@ class Gateway(consumer.BaseConsumer):
         else:
             self.async_replies[frame['command']].append(frame)
     
+    # }}}
 
 
 def main(argv=None):
