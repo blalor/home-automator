@@ -17,6 +17,7 @@ import uuid
 import SimpleXMLRPCServer
 
 import threading, Queue
+
 import logging
 
 import cPickle as pickle
@@ -189,12 +190,16 @@ class BrokerWorker(threading.Thread):
         with self.__pending_requests_lock:
             request = self.__pending_requests.pop(props.correlation_id)
         
-        resp_data = pickle.loads(body)
-        
-        if 'exception' in resp_data:
-            request.exception = resp_data['exception']
-        else:
-            request.response = resp_data['result']
+        try:
+            resp_data = pickle.loads(body)
+            
+            if 'exception' in resp_data:
+                request.exception = resp_data['exception']
+            else:
+                request.response = resp_data['result']
+        except:
+            self._logger.error("exception unpickling", exc_info = True)
+            request.exception = sys.exc_info()[1]
         
         request.event.set()
         
@@ -310,7 +315,8 @@ def main():
     worker.start()
     
     server = SimpleXMLRPCServer.SimpleXMLRPCServer(
-        (config.xmlrpc_server.host, config.xmlrpc_server.port)
+        (config.xmlrpc_server.host, config.xmlrpc_server.port),
+        allow_none = True
     )
     
     # server.register_introspection_functions()
