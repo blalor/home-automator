@@ -189,14 +189,22 @@ class RPCWorker(threading.Thread):
     
     # }}}
     
+    # {{{ __on_returned_msg
+    def __on_returned_msg(self, *args):
+        self._logger.error("returned message %r", args)
+    
+    # }}}
+    
     # {{{ __runner
     def __runner(self):
-        """The thread target; handles RPC invocations and publishes the 
-        result"""
-        
+        """
+        The thread target; handles RPC invocations and publishes the result
+        """
         
         conn = pika.BlockingConnection(self.__connection_params)
         chan = conn.channel()
+        
+        chan.add_on_return_callback(self.__on_returned_msg)
         
         while not self.__shutdown_event.is_set():
             try:
@@ -209,6 +217,8 @@ class RPCWorker(threading.Thread):
                 try:
                     response['result'] = req.callback(*req.args)
                 except:
+                    self._logger.warn("exception invoking %r", req, exc_info = True)
+                    
                     # the exception value
                     response['exception'] = sys.exc_info()[1]
                 
@@ -222,7 +232,7 @@ class RPCWorker(threading.Thread):
                 chan.basic_publish(
                     exchange='',
                     routing_key = req.reply_to,
-                    properties=pika.BasicProperties(
+                    properties = pika.BasicProperties(
                         correlation_id = req.correlation_id,
                         content_type = req.content_type,
                     ),
@@ -394,6 +404,8 @@ class BaseConsumer(object):
                     content_type = 'application/x-python-pickle',
                     headers = dict(keep_alive = str(async))
                 ),
+                immediate = True,
+                mandatory = True,
                 body = serialize(req.msg_body)
             )
         
@@ -457,6 +469,12 @@ class BaseConsumer(object):
     
     # }}}
     
+    # {{{ __on_returned_packet
+    def __on_returned_packet(self, *args):
+        self._logger.error("undeliverable packet %r", args)
+    
+    # }}}
+    
     # {{{ __run_thread
     def __run_thread(self):
         try:
@@ -465,6 +483,8 @@ class BaseConsumer(object):
             # connection/channel for working with raw packets
             self.__xb_frame_conn = self._create_broker_connection()
             self.__xb_frame_chan = self.__xb_frame_conn.channel()
+            
+            self.__xb_frame_chan.add_on_return_callback(self.__on_returned_packet)
             
             # channel for transmitting XBee frames
             self.__rpc_conn = self._create_broker_connection()
