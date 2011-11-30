@@ -332,8 +332,7 @@ class BaseConsumer(object):
     
     # {{{ _register_rpc_function
     def _register_rpc_function(self, queue, func, func_name = None):
-        assert self.__xb_frame_chan == None, \
-            "call from __init__"
+        assert self.__xb_frame_chan == None, "call from __init__"
         
         if func_name == None:
             func_name = func.__name__
@@ -346,8 +345,7 @@ class BaseConsumer(object):
     # }}}
     
     # {{{ check_frame_status
-    @staticmethod
-    def check_remote_at_frame_status(frame):
+    def _check_remote_at_frame_status(self, frame):
         # frame id should be remote_at_response
         
         command = frame['command']
@@ -357,18 +355,22 @@ class BaseConsumer(object):
             # success!
             success = True
             self._logger.debug("successfully sent remote AT command %s", command)
+        
         elif frame['status'] == '\x01':
             # error
             self._logger.error("unspecified error sending remote AT command %s", command)
+        
         elif frame['status'] == '\x02':
             # invalid command
-            self._logger.error("invalid command sending remote AT command %s", command)
+            self._logger.warn("invalid command sending remote AT command %s", command)
+        
         elif frame['status'] == '\x03':
             # invalid parameter
             self._logger.error("invalid parameter sending remote AT command %s", command)
+        
         elif frame['status'] == '\x04':
             # remote command transmission failed
-            self._logger.error("remote AT command %s transmission failed", command)
+            self._logger.info("remote AT command %s transmission failed", command)
         
         return success
     
@@ -718,7 +720,7 @@ class BaseConsumer(object):
         with self.__pending_xb_requests_lock:
             for req in self.__pending_xb_requests.values():
                 if req.is_expired():
-                    self._logger.warn("expiring %r", req)
+                    self._logger.debug("expiring %r", req)
                     
                     self.finish_async_request(req)
     
