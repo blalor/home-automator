@@ -42,6 +42,10 @@ class Listener(object):
                                  queue = self._queue_name,
                                  routing_key = "#")
         
+        self._channel.queue_bind(exchange = 'events',
+                                 queue = self._queue_name,
+                                 routing_key = "#")
+        
     
     # }}}
     

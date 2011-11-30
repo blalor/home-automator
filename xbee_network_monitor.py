@@ -86,13 +86,6 @@ class XBeeNetworkMonitor(consumer.BaseConsumer):
         self._register_rpc_function('zb_net_monitor', self.discover_nodes)
         self._register_rpc_function('zb_net_monitor', self.get_discovered_nodes)
         self._register_rpc_function('zb_net_monitor', self.get_node_details)
-        
-        ## pre-populate node details object for coordinator
-        ## all sorts of special handling here…
-        node = self.__get_node(self.COORD_ADDR)
-        node.ident = "<coordinator>"
-        node.node_type = self.DEVICE_TYPE_MAP[0]
-        node.stale = False
     
     
     # {{{ discover_nodes
@@ -116,6 +109,8 @@ class XBeeNetworkMonitor(consumer.BaseConsumer):
         
         # wait for it to complete
         req.event.wait()
+        
+        self.publish_event('xbee_network_monitor', 'discovery_complete')
     
     # }}}
     
@@ -146,6 +141,8 @@ class XBeeNetworkMonitor(consumer.BaseConsumer):
                 self._logger.info("found new node %s", addr)
                 node = NodeDetails(addr)
                 self.__node_details[addr] = node
+                
+                self.publish_event('xbee_network_monitor', 'new_node', node_id = addr)
         
         return node
     
@@ -267,6 +264,13 @@ class XBeeNetworkMonitor(consumer.BaseConsumer):
         # wait for the main processing thread to be ready
         self.ready_event.wait()
         
+        ## pre-populate node details object for coordinator.
+        ## all sorts of special handling here…
+        node = self.__get_node(self.COORD_ADDR)
+        node.ident = "<coordinator>"
+        node.node_type = self.DEVICE_TYPE_MAP[0]
+        node.stale = False
+        
         ## for some reason, the coordinator doesn't respond to its own address
         ## (not COORD_ADDR).  When querying VR, for example…
         # # ensure local device responds to ND
@@ -320,6 +324,7 @@ class XBeeNetworkMonitor(consumer.BaseConsumer):
                         
                         if node.stale:
                             self._logger.info("node %s is stale", node_id)
+                            self.publish_event('xbee_network_monitor', 'stale_node', node_id = node_id)
                         
                 
                 if do_full_discovery:

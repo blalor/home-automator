@@ -748,7 +748,7 @@ class BaseConsumer(object):
     # }}}
     
     # {{{ publish_event
-    def publish_event(self, routing_key, body):
+    def publish_event(self, routing_key, event, **kwargs):
         with self.__publisher_chan_lock:
             self.__publisher_chan.basic_publish(
                 exchange = 'events',
@@ -756,7 +756,10 @@ class BaseConsumer(object):
                 properties = pika.BasicProperties(
                     content_type = 'application/json'
                 ),
-                body = serialize_json(body)
+                body = serialize_json({
+                    'name' : event,
+                    'data' : kwargs,
+                })
             )
     
     # }}}
