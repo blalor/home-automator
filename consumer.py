@@ -163,7 +163,7 @@ class RPCWorker(threading.Thread):
     def __init__(self, conn_params):
         super(RPCWorker, self).__init__(target = self.__runner)
         
-        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
         
         self.__connection_params = conn_params
         
@@ -249,7 +249,7 @@ class BaseConsumer(object):
     def __init__(self, addrs = ('#')):
         super(BaseConsumer, self).__init__()
         
-        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
         
         self.__allow_all_addrs = False
         

@@ -65,7 +65,7 @@ class BrokerWorker(threading.Thread):
         
         self.__parameters = pika.ConnectionParameters(host = host)
         
-        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
         
         self.__channel = None
         self.__private_queue_name = None

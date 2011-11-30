@@ -39,7 +39,7 @@ class DBLogger(object):
     def __init__(self, host, db_file):
         super(DBLogger, self).__init__()
         
-        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
         
         parameters = pika.ConnectionParameters(host = host)
         self.connection = pika.SelectConnection(parameters, self.on_connected)

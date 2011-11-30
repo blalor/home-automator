@@ -64,7 +64,7 @@ class XBeeDispatcher(object):
     def __init__(self, broker_host, serial_port, baudrate):
         super(XBeeDispatcher, self).__init__()
         
-        self._logger = logging.getLogger(self.__class__.__name__)
+        self._logger = logging.getLogger(__name__ + "." + self.__class__.__name__)
         
         self.__serial_port = serial_port
         self.__baudrate = baudrate
