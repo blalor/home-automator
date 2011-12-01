@@ -553,6 +553,8 @@ class BaseConsumer(object):
     
     # {{{ process_forever
     def process_forever(self):
+        self._logger.info("starting up")
+        
         self.__shutdown_event = threading.Event()
         
         proc_4evr = threading.Thread(target = self.__run_thread, name = "proc_4evr")
@@ -586,15 +588,18 @@ class BaseConsumer(object):
             
         
         with self.__publisher_chan_lock:
+            # shut down the RPC worker first, so we don't get hung if any of
+            # the following fails
+            if self.__rpc_worker.is_alive():
+                self.__rpc_worker.shutdown()
+                self.__rpc_worker.join()
+            
             self.__xb_frame_chan.stop_consuming()
             self.__xb_frame_conn.close()
             
             self.__rpc_conn.close()
             self.__publisher_conn.close()
             
-            if self.__rpc_worker.is_alive():
-                self.__rpc_worker.shutdown()
-                self.__rpc_worker.join()
             
     
     # }}}
