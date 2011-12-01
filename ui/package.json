@@ -1,0 +1,11 @@
+{
+    "name": "home-automator-ui",
+    "version": "0.0.1",
+    "dependencies": {
+        "socket.io" : " 0.8.7",
+        "amqp" : " 0.1.1",
+        "node-uuid" : " 1.2.0",
+        "node-static" : " 0.5.9",
+        "log4js" : " 0.4.1"
+    }
+}
