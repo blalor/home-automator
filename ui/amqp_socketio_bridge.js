@@ -297,8 +297,11 @@ io.sockets.on('connection', function (socket) {
                     args    : args
                 },
                 {                  // message options
+                    // "immediate" will cause a basic-return if the recipient 
+                    // is busy with other messages…
+                    // immediate     : true,
+                    
                     mandatory     : true,
-                    immediate     : true,
                     replyTo       : q.name,
                     correlationId : ticket
                 }
