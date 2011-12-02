@@ -91,11 +91,25 @@ staticMimeTypes.contentTypes['woff']  = 'application/x-font-woff';
 
 var staticServer = new (static.Server)('./static', { cache: 10 });
 
+var amqp_exchange = null;
 var amqp_conn = amqp.createConnection({ host: 'pepe.home.bravo5.org' });
 
 // Wait for connection to become established.
 amqp_conn.on("ready", function () {
     amqp_logger.info("connection made");
+    
+    amqp_exchange = amqp_conn.exchange('', {type: 'topic'});
+    
+    // the most basic possible way to show that there's been an error.  Not 
+    // much info here…
+    amqp_exchange.on('basic-return', function(args) {
+        // { replyCode: 313,
+        //   replyText: 'NO_CONSUMERS',
+        //   exchange: '',
+        //   routingKey: 'zb_net_monitor' }
+        
+        amqp_logger.error("message returned: ", args);
+    });
 });
 
 amqp_conn.on("error", function () {
@@ -276,7 +290,7 @@ io.sockets.on('connection', function (socket) {
                 }
             }
             
-            amqp_conn.publish(
+            amqp_exchange.publish(
                 rpc_req_msg.queue, // recipient queue
                 {                  // message body
                     command : rpc_req_msg.command,
