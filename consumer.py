@@ -476,6 +476,12 @@ class BaseConsumer(object):
         self._logger.error("undeliverable packet %r", args)
     
     # }}}
+
+    # {{{ __on_channel_close
+    def __on_channel_close(self, *args):
+        self._logger.error("channel closed %r", args)
+    
+    # }}}
     
     # {{{ __run_thread
     def __run_thread(self):
@@ -487,6 +493,7 @@ class BaseConsumer(object):
             self.__xb_frame_chan = self.__xb_frame_conn.channel()
             
             self.__xb_frame_chan.add_on_return_callback(self.__on_returned_packet)
+            self.__xb_frame_chan.add_on_close_callback(self.__on_channel_close)
             
             # channel for transmitting XBee frames
             self.__rpc_conn = self._create_broker_connection()
