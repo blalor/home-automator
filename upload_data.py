@@ -77,7 +77,7 @@ TABLE_TO_PICKLE_MAP = {
     'temperature' : ('temperature', ('ts_utc', 'node_id', 'temp_C'), temp_map),
     'humidity' : ('humidity', ('ts_utc', 'node_id', 'rel_humid'), humid_map),
     # 'light' : '',
-    # 'furnace' : '',
+    'furnace' : ('furnace', ('ts_utc', 'zone_active'), identity_map),
     'oil_tank' : ('oil_tank', ('ts_utc', 'height'), identity_map),
 }
 
