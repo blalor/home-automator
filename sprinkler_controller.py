@@ -18,7 +18,7 @@ def main():
         "http://%s:%d" % (config.xmlrpc_server.host, config.xmlrpc_server.port)
     )
     
-    meth = getattr(srv, sys.argv[1])
+    meth = getattr(srv, 'sprinkler.' + sys.argv[1])
     meth(int(sys.argv[2]))
     
 
