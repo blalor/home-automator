@@ -28,7 +28,7 @@ import xbee, serial
 
 from support import serializer_utils
 
-__CONTENT_TYPE = serializer_utils.CONTENT_TYPE_PICKLE
+_CONTENT_TYPE = serializer_utils.CONTENT_TYPE_PICKLE
 
 # {{{ parse_addr
 def parse_addr(addr):
@@ -194,9 +194,9 @@ class XBeeDispatcher(object):
                             routing_key = props.reply_to,
                             properties = pika.BasicProperties(
                                 correlation_id = props.correlation_id,
-                                content_type = __CONTENT_TYPE
+                                content_type = _CONTENT_TYPE
                             ),
-                            body = serializer_utils.serialize(frame, __CONTENT_TYPE)
+                            body = serializer_utils.serialize(frame, _CONTENT_TYPE)
                         )
                         
                         if not keep_alive:
@@ -228,9 +228,9 @@ class XBeeDispatcher(object):
                     exchange = self.RAW_XBEE_PACKET_EXCHANGE,
                     routing_key = routing_key,
                     properties = pika.BasicProperties(
-                        content_type = __CONTENT_TYPE
+                        content_type = _CONTENT_TYPE
                     ),
-                    body = serializer_utils.serialize(frame, __CONTENT_TYPE)
+                    body = serializer_utils.serialize(frame, _CONTENT_TYPE)
                 )
         
         except:
