@@ -10,7 +10,11 @@ import cPickle as pickle
 import json
 import bson
 
-import datetime, time, pytz
+import datetime, time
+
+import time_util
+SYSTEM_TZ = time_util.SYSTEM_TZ
+UTC = time_util.UTC
 
 CONTENT_TYPE_PICKLE = 'application/x-python-pickle'
 CONTENT_TYPE_JSON   = 'application/json'
@@ -19,7 +23,6 @@ CONTENT_TYPE_BSON   = 'application/bson'
 ## alias to affect all uses
 CONTENT_TYPE_BINARY = CONTENT_TYPE_BSON
 
-__SYSTEM_TZ = pytz.timezone(time.tzname[0])
 
 class InvalidSerializationContentType(Exception):
     pass
@@ -43,7 +46,7 @@ def serialize(data, content_type):
                     # naive
                     dt = __SYSTEM_TZ.localize(obj)
                 
-                return dt.astimezone(pytz.utc).isoformat()
+                return dt.astimezone(UTC).isoformat()
             
             elif isinstance(obj, Exception):
                 return {

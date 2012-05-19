@@ -21,7 +21,8 @@ import json
 import sqlite3
 import copy
 
-SYSTEM_TZ = pytz.timezone(time.tzname[0])
+from support import time_util
+SYSTEM_TZ = time_util.SYSTEM_TZ
 
 class DBLogger(object):
     """docstring for DBLogger"""

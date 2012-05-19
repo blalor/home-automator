@@ -9,10 +9,11 @@ Copyright (c) 2011 __MyCompanyName__. All rights reserved.
 
 import sys, os
 
-# # ../
-# sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
-# 
-# from support import time_util
+# ../
+sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
+from support import time_util
+SYSTEM_TZ = time_util.SYSTEM_TZ
+UTC = time_util.UTC
 
 import json
 import cPickle as pickle
@@ -20,9 +21,8 @@ import cPickle as pickle
 from pprint import pprint
 
 import random
-import datetime, iso8601, pytz, time
+import datetime, iso8601, time
 
-SYSTEM_TZ = pytz.timezone(time.tzname[0])
 
 zb_addr_replacements = {}
 
@@ -43,7 +43,7 @@ def replace_addr(addr):
 
 # {{{ main
 def main():
-    epoch = datetime.datetime(1970, 1, 1, 0, 0, 0, 0, pytz.UTC)
+    epoch = datetime.datetime(1970, 1, 1, 0, 0, 0, 0, UTC)
     first_timestamp = None
     
     with open(sys.argv[1], "rb", 0) as ifp:
@@ -91,7 +91,7 @@ def main():
                         
                         ts = epoch + (iso8601.parse_date(ts).astimezone(SYSTEM_TZ) - first_timestamp)
                         
-                        msg['body']['timestamp'] = ts.astimezone(pytz.UTC).isoformat()
+                        msg['body']['timestamp'] = ts.astimezone(UTC).isoformat()
                         
                 elif msg['method']['exchange'] == 'raw_xbee_frames':
                     # raw_xbee_frames zb_rx.<addr>

@@ -12,7 +12,9 @@ from datetime import datetime
 
 import pytz
 
-SYSTEM_TZ = pytz.timezone(time.tzname[0])
+# cannot use time.tzname[0]
+# https://bugs.launchpad.net/pytz/+bug/1001631
+SYSTEM_TZ = pytz.timezone('US/Eastern')
 UTC = pytz.utc
 
 def json_date_handler(obj):
