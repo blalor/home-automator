@@ -17,25 +17,6 @@ import pika
 
 from config import config_data as config
 
-# {{{ serialize_json
-def serialize_json(data):
-    def dthandler(obj):
-        if isinstance(obj, datetime.datetime):
-            dt = obj
-            
-            if dt.tzinfo == None:
-                # naive
-                dt = SYSTEM_TZ.localize(obj)
-            
-            return dt.astimezone(pytz.utc).isoformat()
-        
-        else:
-            raise TypeError(repr(o) + " is not JSON serializable")
-    
-    return json.dumps(data, default=time_util.json_date_handler)
-
-# }}}
-
 def fcttime_to_datetime(fcttime):
     return time_util.dt_from_epoch_as_system_tz(int(fcttime['epoch']))
     
