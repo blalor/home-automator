@@ -16,70 +16,16 @@ import threading
 import Queue
 import uuid
 
-import cPickle as pickle
-import json
+import time
 
-import datetime, time, pytz
-
-SYSTEM_TZ = pytz.timezone(time.tzname[0])
+from support import serializer_utils
 
 class InvalidDestination(Exception):
     pass
 
 
-class InvalidSerializationContentType(Exception):
-    pass
-
-
 class NoResponse(Exception):
     pass
-
-
-# {{{ serialize
-def serialize(data):
-    return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
-
-# }}}
-
-# {{{ deserialize
-def deserialize(data):
-    return pickle.loads(data)
-
-# }}}
-
-# {{{ serialize_json
-def serialize_json(data):
-    """serializes an object to JSON, with handling for datetime instances"""
-    
-    def dthandler(obj):
-        if isinstance(obj, datetime.datetime):
-            dt = obj
-            
-            if dt.tzinfo == None:
-                # naive
-                dt = SYSTEM_TZ.localize(obj)
-            
-            return dt.astimezone(pytz.utc).isoformat()
-        
-        elif isinstance(obj, Exception):
-            return {
-                'py/class': obj.__class__.__name__,
-                'args': obj.args,
-                'message': obj.message
-            }
-        else:
-            raise TypeError(repr(obj) + " is not JSON serializable")
-    
-    return json.dumps(data, default=dthandler)
-
-# }}}
-
-# {{{ deserialize_json
-# @todo turn timestamp into datetime
-def deserialize_json(data):
-    return json.loads(data)
-
-# }}}
 
 
 # {{{{ class XBeeRequest
@@ -222,13 +168,8 @@ class RPCWorker(threading.Thread):
                     # the exception value
                     response['exception'] = sys.exc_info()[1]
                 
-                if req.content_type == 'application/x-python-pickle':
-                    resp_body = serialize(response)
-                elif req.content_type == 'application/json':
-                    resp_body = serialize_json(response)
-                else:
-                    raise InvalidSerializationContentType(req.content_type)
-                
+                resp_body = serializer_utils.serialize(response, req.content_type)
+
                 chan.basic_publish(
                     exchange='',
                     routing_key = req.reply_to,
@@ -308,18 +249,6 @@ class BaseConsumer(object):
         """returns a new broker connection"""
         
         return pika.BlockingConnection(self._connection_params)
-    
-    # }}}
-    
-    # {{{ _serialize
-    def _serialize(self, data):
-        return serialize(data)
-    
-    # }}}
-    
-    # {{{ _deserialize
-    def _deserialize(self, data):
-        return deserialize(data)
     
     # }}}
     
@@ -403,12 +332,12 @@ class BaseConsumer(object):
                 properties = pika.BasicProperties(
                     reply_to = self.__queue_name,
                     correlation_id = req.ticket,
-                    content_type = 'application/x-python-pickle',
+                    content_type = serializer_utils.CONTENT_TYPE_PICKLE,
                     headers = dict(keep_alive = str(async))
                 ),
                 immediate = True,
                 mandatory = True,
-                body = serialize(req.msg_body)
+                body = serializer_utils.serialize(req.msg_body, serializer_utils.CONTENT_TYPE_PICKLE)
             )
         
         if not async:
@@ -634,12 +563,7 @@ class BaseConsumer(object):
             "%s not a valid RPC queue" % (method.routing_key,)
         
         # hand off the RPC request to the RPCWorker
-        if props.content_type == 'application/x-python-pickle':
-            req_body = deserialize(body)
-        elif props.content_type == 'application/json':
-            req_body = deserialize_json(body)
-        else:
-            raise InvalidSerializationContentType(props.content_type)
+        req_body = serializer_utils.deserialize(body, props.content_type)
         
         callback = None
         if req_body['command'] in self.__rpc_queue_map[method.routing_key]:
@@ -665,8 +589,8 @@ class BaseConsumer(object):
     def __on_receive_packet(self, ch, method, props, body):
         self._logger.debug("received packet from exchange '%s' with routing key %s and correlation_id %s",
                            method.exchange, method.routing_key, props.correlation_id)
-        
-        frame = deserialize(body)
+
+        frame = serializer_utils.deserialize(body, props.content_type)
         
         # the following frames are handled here:
         #  • XBee "raw" frames
@@ -752,9 +676,9 @@ class BaseConsumer(object):
                 exchange = 'sensor_data',
                 routing_key = routing_key,
                 properties = pika.BasicProperties(
-                    content_type = 'application/json'
+                    content_type = serializer_utils.CONTENT_TYPE_JSON
                 ),
-                body = serialize_json(body)
+                body = serializer_utils.serialize(body, serializer_utils.CONTENT_TYPE_JSON)
             )
     
     # }}}
@@ -766,12 +690,15 @@ class BaseConsumer(object):
                 exchange = 'events',
                 routing_key = routing_key,
                 properties = pika.BasicProperties(
-                    content_type = 'application/json'
+                    content_type = serializer_utils.CONTENT_TYPE_JSON
                 ),
-                body = serialize_json({
-                    'name' : event,
-                    'data' : kwargs,
-                })
+                body = serializer_utils.serialize(
+                    {
+                        'name' : event,
+                        'data' : kwargs,
+                    },
+                    serializer_utils.CONTENT_TYPE_JSON
+                )
             )
     
     # }}}

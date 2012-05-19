@@ -26,19 +26,9 @@ import logging
 import pika
 import xbee, serial
 
-import cPickle as pickle
+from support import serializer_utils
 
-# {{{ serialize
-def serialize(data):
-    return pickle.dumps(data, pickle.HIGHEST_PROTOCOL)
-
-# }}}
-
-# {{{ deserialize
-def deserialize(data):
-    return pickle.loads(data)
-
-# }}}
+__CONTENT_TYPE = serializer_utils.CONTENT_TYPE_PICKLE
 
 # {{{ parse_addr
 def parse_addr(addr):
@@ -120,7 +110,7 @@ class XBeeDispatcher(object):
             # recoverable if the same message were received again
             chan.basic_ack(delivery_tag = method.delivery_tag)
             
-            req = deserialize(body)
+            req = serializer_utils.deserialize(body, props.content_type)
             
             self._logger.debug(
                 "TX method %s for dest %s with correlation ID %s",
@@ -204,9 +194,9 @@ class XBeeDispatcher(object):
                             routing_key = props.reply_to,
                             properties = pika.BasicProperties(
                                 correlation_id = props.correlation_id,
-                                content_type = 'application/x-python-pickle'
+                                content_type = __CONTENT_TYPE
                             ),
-                            body = serialize(frame)
+                            body = serializer_utils.serialize(frame, __CONTENT_TYPE)
                         )
                         
                         if not keep_alive:
@@ -238,9 +228,9 @@ class XBeeDispatcher(object):
                     exchange = self.RAW_XBEE_PACKET_EXCHANGE,
                     routing_key = routing_key,
                     properties = pika.BasicProperties(
-                        content_type = 'application/x-python-pickle'
+                        content_type = __CONTENT_TYPE
                     ),
-                    body = serialize(frame)
+                    body = serializer_utils.serialize(frame, __CONTENT_TYPE)
                 )
         
         except:
