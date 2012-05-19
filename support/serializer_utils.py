@@ -28,6 +28,27 @@ class InvalidSerializationContentType(Exception):
     pass
 
 
+def _dthandler(obj):
+    if isinstance(obj, datetime.datetime):
+        dt = obj
+        
+        if dt.tzinfo == None:
+            # naive
+            dt = SYSTEM_TZ.localize(obj)
+        
+        return dt.astimezone(UTC).isoformat()
+    
+    elif isinstance(obj, Exception):
+        return {
+            'py/class': obj.__class__.__name__,
+            'args': obj.args,
+            'message': obj.message
+        }
+    else:
+        raise TypeError(repr(obj) + " is not JSON serializable")
+
+
+
 # {{{ serialize
 def serialize(data, content_type):
     retVal = None
@@ -37,27 +58,7 @@ def serialize(data, content_type):
 
     elif content_type == CONTENT_TYPE_JSON:
         # serializes an object to JSON, with handling for datetime instances
-        
-        def dthandler(obj):
-            if isinstance(obj, datetime.datetime):
-                dt = obj
-                
-                if dt.tzinfo == None:
-                    # naive
-                    dt = __SYSTEM_TZ.localize(obj)
-                
-                return dt.astimezone(UTC).isoformat()
-            
-            elif isinstance(obj, Exception):
-                return {
-                    'py/class': obj.__class__.__name__,
-                    'args': obj.args,
-                    'message': obj.message
-                }
-            else:
-                raise TypeError(repr(obj) + " is not JSON serializable")
-        
-        retVal = json.dumps(data, default=dthandler)
+        retVal = json.dumps(data, default = _dthandler)
     
     elif content_type == CONTENT_TYPE_BSON:
         retVal = bson.dumps(data)
@@ -89,3 +90,26 @@ def deserialize(data, content_type):
     return retVal
 
 # }}}
+
+if __name__ == '__main__':
+    import iso8601
+    import bson
+
+    now = bson.loads(bson.dumps({'now': SYSTEM_TZ.localize(datetime.datetime.now())}))['now']
+    utcnow = datetime.datetime.utcnow()
+
+    ser = _dthandler(now)
+    utcser = _dthandler(utcnow)
+
+    print ">>> now"
+    print "         naive:", now.isoformat()
+    print "    serialized:", ser
+    print "iso8601 parsed:", iso8601.parse_date(ser).isoformat()
+    print "   iso8601 sys:", iso8601.parse_date(ser).astimezone(SYSTEM_TZ).isoformat()
+
+
+    print ">>> utcnow"
+    print "         naive:", utcnow.isoformat()
+    print "    serialized:", utcser
+    print "iso8601 parsed:", iso8601.parse_date(utcser).isoformat()
+    print "   iso8601 sys:", iso8601.parse_date(utcser).astimezone(SYSTEM_TZ).isoformat()

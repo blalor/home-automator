@@ -125,7 +125,8 @@ class DBLogger(object):
         
         rk = method.routing_key
         timestamp = iso8601.parse_date(frame['timestamp']).astimezone(SYSTEM_TZ)
-        
+        self._logger.debug("parsed %s to %s using tz %s", frame['timestamp'], timestamp.isoformat(), SYSTEM_TZ)
+
         latest_event = SYSTEM_TZ.localize(datetime.datetime.fromtimestamp(0))
         
         if rk in self.latest_event_received:

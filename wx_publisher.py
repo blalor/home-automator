@@ -10,7 +10,8 @@ Copyright (c) 2011 __MyCompanyName__. All rights reserved.
 import sys, os
 
 import json, urllib2
-from support import time_util
+from support import time_util, serializer_utils
+
 import json
 
 import pika
@@ -61,7 +62,7 @@ def publish_hourly_forecast(data, ch):
         properties = pika.BasicProperties(
             content_type = 'application/json'
         ),
-        body=json.dumps(hourly_forecast, default=time_util.json_date_handler)
+        body = serializer_utils.serialize(hourly_forecast, 'application/json')
     )
 
 
@@ -94,7 +95,7 @@ def publish_current_observation(data, ch):
         properties = pika.BasicProperties(
             content_type = 'application/json'
         ),
-        body=json.dumps(current_obs, default=time_util.json_date_handler)
+        body = serializer_utils.serialize(current_obs, 'application/json')
     )
 
 

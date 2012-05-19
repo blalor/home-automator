@@ -15,21 +15,7 @@ import pytz
 # cannot use time.tzname[0]
 # https://bugs.launchpad.net/pytz/+bug/1001631
 SYSTEM_TZ = pytz.timezone('US/Eastern')
-UTC = pytz.utc
-
-def json_date_handler(obj):
-    if isinstance(obj, datetime):
-        dt = obj
-        
-        if dt.tzinfo == None:
-            # naive
-            dt = SYSTEM_TZ.localize(obj)
-        
-        return dt.astimezone(UTC).isoformat()
-    
-    else:
-        raise TypeError(repr(o) + " is not JSON serializable")
-
+UTC = pytz.utc # used by others
 
 def dt_from_epoch_as_system_tz(epoch):
     return SYSTEM_TZ.localize(datetime.fromtimestamp(epoch))

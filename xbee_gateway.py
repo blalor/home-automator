@@ -27,6 +27,7 @@ import pika
 import xbee, serial
 
 from support import serializer_utils
+SYSTEM_TZ = serializer_utils.SYSTEM_TZ
 
 _CONTENT_TYPE = serializer_utils.CONTENT_TYPE_BINARY
 
@@ -172,7 +173,7 @@ class XBeeDispatcher(object):
         
         # @todo make utctime, but this will affect the db logger, and the 
         # plotter, too!
-        frame['_timestamp'] = datetime.datetime.now()
+        frame['_timestamp'] = SYSTEM_TZ.localize(datetime.datetime.now())
         
         try:
             if 'frame_id' in frame:
