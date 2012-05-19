@@ -332,12 +332,12 @@ class BaseConsumer(object):
                 properties = pika.BasicProperties(
                     reply_to = self.__queue_name,
                     correlation_id = req.ticket,
-                    content_type = serializer_utils.CONTENT_TYPE_PICKLE,
+                    content_type = serializer_utils.CONTENT_TYPE_BINARY,
                     headers = dict(keep_alive = str(async))
                 ),
                 immediate = True,
                 mandatory = True,
-                body = serializer_utils.serialize(req.msg_body, serializer_utils.CONTENT_TYPE_PICKLE)
+                body = serializer_utils.serialize(req.msg_body, serializer_utils.CONTENT_TYPE_BINARY)
             )
         
         if not async:

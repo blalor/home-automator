@@ -16,6 +16,9 @@ CONTENT_TYPE_PICKLE = 'application/x-python-pickle'
 CONTENT_TYPE_JSON   = 'application/json'
 CONTENT_TYPE_BSON   = 'application/bson'
 
+## alias to affect all uses
+CONTENT_TYPE_BINARY = CONTENT_TYPE_BSON
+
 __SYSTEM_TZ = pytz.timezone(time.tzname[0])
 
 class InvalidSerializationContentType(Exception):

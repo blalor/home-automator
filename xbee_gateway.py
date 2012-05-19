@@ -28,7 +28,7 @@ import xbee, serial
 
 from support import serializer_utils
 
-_CONTENT_TYPE = serializer_utils.CONTENT_TYPE_PICKLE
+_CONTENT_TYPE = serializer_utils.CONTENT_TYPE_BINARY
 
 # {{{ parse_addr
 def parse_addr(addr):
