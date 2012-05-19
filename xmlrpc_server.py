@@ -20,7 +20,8 @@ import threading, Queue
 
 import logging
 
-import cPickle as pickle
+from support import serializer_utils
+_CONTENT_TYPE = serializer_utils.CONTENT_TYPE_BINARY
 
 import pika
 
@@ -174,12 +175,15 @@ class BrokerWorker(threading.Thread):
                 properties = pika.BasicProperties(
                     reply_to = self.__private_queue_name,
                     correlation_id = request.ticket,
-                    content_type = 'application/x-python-pickle'
+                    content_type = _CONTENT_TYPE
                 ),
-                body = pickle.dumps({
-                    'command' : request.command,
-                    'args' : request.args,
-                })
+                body = serializer_utils.serialize(
+                    {
+                        'command' : request.command,
+                        'args' : request.args,
+                    },
+                    _CONTENT_TYPE
+                )
             )
     
     # }}}
@@ -191,7 +195,7 @@ class BrokerWorker(threading.Thread):
             request = self.__pending_requests.pop(props.correlation_id)
         
         try:
-            resp_data = pickle.loads(body)
+            resp_data = serializer_utils.deserialize(body, props.content_type)
             
             if 'exception' in resp_data:
                 request.exception = resp_data['exception']
